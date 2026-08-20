@@ -1,0 +1,18 @@
+# Tema do aplicativo, espelhado de src/stellantis_recall/viz.py e qmd/theme.scss.
+# Os cinco tons institucionais mais os tints derivados -- o Streamlit precisa de
+# um cinza medio legivel para texto secundario, e o #BCBCBC nao serve (contraste
+# de 1,9:1 sobre branco).
+
+[theme]
+base = "light"
+primaryColor = "#243882"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#E6E8EE"
+textColor = "#282B34"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

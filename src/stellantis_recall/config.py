@@ -47,6 +47,7 @@ MART_FEATURES = MART_DIR / "features.parquet"
 MART_PERFIL_MODELO = MART_DIR / "perfil_por_modelo.parquet"
 MART_EVOLUCAO_IDADE = MART_DIR / "evolucao_por_idade.parquet"
 MART_RANKING_RISCO = MART_DIR / "ranking_risco.parquet"
+MART_MATRIZ_SEGMENTOS = MART_DIR / "matriz_segmentos.parquet"
 RELATORIO_QUALIDADE = METRICS_DIR / "quality_report.parquet"
 
 MODELO_FINAL = MODELS_DIR / "model.joblib"
@@ -63,6 +64,12 @@ CALIBRACAO = METRICS_DIR / "calibracao.parquet"
 CURVA_GANHO = METRICS_DIR / "curva_ganho.parquet"
 MATRIZ_CONFUSAO = METRICS_DIR / "matriz_confusao.parquet"
 DECISAO_OPERACIONAL = METRICS_DIR / "decisao_operacional.json"
+IMPORTANCIA_PERMUTACAO = METRICS_DIR / "importancia_permutacao.parquet"
+IMPORTANCIA_GRUPOS = METRICS_DIR / "importancia_grupos.parquet"
+COEFICIENTES = METRICS_DIR / "coeficientes.parquet"
+SHAP_RESUMO = METRICS_DIR / "shap_resumo.parquet"
+SHAP_VALORES = METRICS_DIR / "shap_valores.parquet"
+DEPENDENCIA_PARCIAL = METRICS_DIR / "dependencia_parcial.parquet"
 
 DIRETORIOS_GERADOS = (TRUSTED_DIR, MART_DIR, MODELS_DIR, METRICS_DIR, FIGURES_DIR)
 

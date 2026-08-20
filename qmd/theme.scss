@@ -1,32 +1,45 @@
 /*-- scss:defaults --*/
 
-// Paleta espelhada de src/stellantis_recall/viz.py -- documento e figuras
-// precisam ler como uma peça só.
-$tinta:        #1b2430;
-$tinta-suave:  #5b6672;
-$grade:        #e3e7ec;
-$azul:         #1f4e79;
-$ambar:        #c8760a;
-$vermelho:     #a4243b;
-$verde:        #3d6b52;
+// Paleta institucional, espelhada de src/stellantis_recall/viz.py.
+// Documento e figuras precisam ler como uma peça só.
+$azul-profundo: #00133B;
+$azul:          #243882;
+$grafite:       #282B34;
+$cinza:         #BCBCBC;
+$branco:        #FFFFFF;
+
+// Tints derivados — mistura linear com branco, sem introduzir matiz nova.
+// O #BCBCBC tem contraste 1,9:1 sobre branco e reprova para texto; o tint de
+// 70% do grafite sobe para ~5,3:1.
+$tinta-suave:     #686B71;
+$grade:           #E4E4E4;
+$azul-claro:      #9BA4C6;
+$fundo-destaque:  #E6E8EE;
 
 $primary:      $azul;
-$body-color:   $tinta;
-$body-bg:      #ffffff;
+$secondary:    $tinta-suave;
+$body-color:   $grafite;
+$body-bg:      $branco;
 $link-color:   $azul;
+$link-hover-color: $azul-profundo;
 
 $font-family-sans-serif: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
 $font-size-root: 16px;
 $line-height-base: 1.65;
 
 $headings-font-weight: 600;
+$headings-color: $azul-profundo;
 $h1-font-size: 1.9rem;
 $h2-font-size: 1.4rem;
 $h3-font-size: 1.15rem;
 
 $table-border-color: $grade;
-$code-bg: #f6f8fa;
-$code-color: #43506b;
+$code-bg: #F4F5F7;
+$code-color: $azul;
+
+// Dashboard
+$navbar-bg: $azul-profundo;
+$navbar-fg: $branco;
 
 /*-- scss:rules --*/
 
@@ -55,19 +68,21 @@ table {
 }
 
 thead th {
-  border-bottom: 2px solid $tinta-suave !important;
+  border-bottom: 2px solid $azul-profundo !important;
   font-weight: 600;
-  color: $tinta;
+  color: $azul-profundo;
 }
 
-// Blocos de destaque para as conclusões que sustentam decisões de modelagem.
 .callout {
   border-left-width: 4px;
 }
 
+// Sem cor de alerta na paleta institucional: achado e limitação se distinguem
+// por *valor* e por peso de borda, não por matiz. O achado usa o azul
+// institucional; a limitação, o azul profundo com borda mais pesada.
 .achado {
-  border-left: 4px solid $ambar;
-  background: #fdf8f1;
+  border-left: 4px solid $azul;
+  background: $fundo-destaque;
   padding: 0.9rem 1.1rem;
   margin: 1.4rem 0;
   border-radius: 0 4px 4px 0;
@@ -76,13 +91,19 @@ thead th {
 }
 
 .limitacao {
-  border-left: 4px solid $vermelho;
-  background: #fbf4f5;
+  border-left: 6px solid $azul-profundo;
+  background: mix($azul-profundo, $branco, 7%);
   padding: 0.9rem 1.1rem;
   margin: 1.4rem 0;
   border-radius: 0 4px 4px 0;
 
   p:last-child { margin-bottom: 0; }
+
+  // Compensa a ausência de cor quente: a limitação se anuncia pelo rótulo.
+  > p:first-child strong:first-child {
+    color: $azul-profundo;
+    letter-spacing: 0.02em;
+  }
 }
 
 // O código é evidência, não conteúdo principal: presente, discreto, dobrável.
@@ -94,4 +115,52 @@ details > summary {
 figure figcaption {
   color: $tinta-suave;
   font-size: 0.85rem;
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+
+.quarto-dashboard .card {
+  border-color: $grade;
+}
+
+.quarto-dashboard .card-header {
+  background-color: $branco;
+  border-bottom: 1px solid $grade;
+  color: $azul-profundo;
+  font-weight: 600;
+  font-size: 0.94rem;
+}
+
+.quarto-dashboard .bslib-value-box {
+  border: none;
+}
+
+.quarto-dashboard .bslib-value-box .value-box-value {
+  font-size: 2rem;
+  font-weight: 650;
+}
+
+.quarto-dashboard .bslib-value-box .value-box-title {
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.quarto-dashboard .nav-tabs .nav-link.active {
+  border-bottom: 3px solid $azul;
+  color: $azul-profundo;
+  font-weight: 600;
+}
+
+// Nota de rodapé dentro de um card — usada para as ressalvas estatísticas que
+// precisam acompanhar o gráfico e não podem ficar em outra página.
+.nota-card {
+  font-size: 0.8rem;
+  color: $tinta-suave;
+  border-top: 1px dashed $grade;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
 }

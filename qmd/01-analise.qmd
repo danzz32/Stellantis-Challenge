@@ -1,14 +1,33 @@
 ---
 title: "Predição de Recall a partir de Ocorrências de Garantia"
-subtitle: "Parte 1 — Análise Exploratória e Qualidade dos Dados"
+subtitle: "Análise exploratória, modelo preditivo, avaliação e interpretação"
 author: "Desafio técnico · Bolsista Cientista de Dados"
 date: today
 date-format: "DD/MM/YYYY"
 abstract: |
-  Análise exploratória de 500 registros sintéticos de garantia, cobrindo
-  avaliação de qualidade, estatística descritiva e estrutura de associação
-  entre as variáveis. O documento estabelece o que o dado sustenta — e o que
-  ele não sustenta — antes de qualquer decisão de modelagem.
+  Análise completa de 500 registros sintéticos de garantia: qualidade e
+  estrutura dos dados, comparação de quatro classificadores sob validação
+  cruzada estratificada repetida, definição do ponto de corte por custo de
+  negócio e interpretação das variáveis relevantes. O fio condutor é distinguir
+  sinal de ruído amostral em uma base pequena — e dizer com clareza o que o dado
+  sustenta e o que ele não sustenta.
+format:
+  html:
+    theme: [cosmo, theme.scss]
+    toc: true
+    toc-depth: 3
+    toc-title: "Conteúdo"
+    number-sections: true
+    number-depth: 2
+    code-fold: true
+    code-summary: "código"
+    code-tools: true
+    code-line-numbers: false
+    fig-align: center
+    fig-responsive: true
+    tbl-cap-location: top
+    embed-resources: true
+    smooth-scroll: true
 ---
 
 ```{python}
@@ -287,7 +306,7 @@ matriz = eda.matriz_correlacao(df)
 rotulos = ["Idade", "Km", "Reclamações", "Recall"]
 
 fig, eixo = plt.subplots(figsize=(5.4, 4.4))
-imagem = eixo.imshow(matriz, cmap="RdYlBu_r", vmin=-1, vmax=1)
+imagem = eixo.imshow(matriz, cmap=viz.MAPA_DIVERGENTE, vmin=-1, vmax=1)
 
 eixo.set_xticks(range(len(rotulos)), rotulos, rotation=30, ha="right")
 eixo.set_yticks(range(len(rotulos)), rotulos)
@@ -395,7 +414,7 @@ eixo.errorbar(
     ecolor=viz.TINTA, elinewidth=1.4, capsize=4,
 )
 eixo.axvline(
-    eda.alvo_binario(df).mean(), color=viz.VERMELHO,
+    eda.alvo_binario(df).mean(), color=viz.COR_REFERENCIA,
     linestyle="--", linewidth=1.4, label="taxa global (47,8%)",
 )
 
@@ -452,7 +471,7 @@ esq.errorbar(
         robustos["taxa_recall"] - robustos["ic_inferior"],
         robustos["ic_superior"] - robustos["taxa_recall"],
     ]),
-    fmt="o-", color=viz.AMBAR, ecolor=viz.CINZA,
+    fmt="o-", color=viz.AZUL_PROFUNDO, ecolor=viz.TINTA_SUAVE,
     elinewidth=1.2, capsize=3, markersize=6,
 )
 esq.set_title("Taxa de recall por nº de reclamações")
@@ -570,3 +589,849 @@ disponíveis também omitem dimensões que dominariam o problema real: fornecedo
 de componente, planta e lote de produção, tipo e severidade da falha, e a data
 da ocorrência. Isso está detalhado na Parte 4.
 :::
+
+```{python}
+#| label: setup-modelagem
+#| include: false
+
+import json
+
+from stellantis_recall.modeling import evaluate, explain, train
+
+comparacao = pd.read_parquet(config.COMPARACAO_MODELOS)
+testes = pd.read_parquet(config.TESTES_PAREADOS)
+dobras = pd.read_parquet(config.METRICAS_DOBRAS)
+metricas_finais = pd.read_parquet(config.METRICAS_FINAIS)
+sensibilidade = pd.read_parquet(config.SENSIBILIDADE_CUSTO)
+roc = pd.read_parquet(config.CURVA_ROC)
+pr = pd.read_parquet(config.CURVA_PR)
+calib = pd.read_parquet(config.CALIBRACAO)
+ganho = pd.read_parquet(config.CURVA_GANHO)
+confusao = pd.read_parquet(config.MATRIZ_CONFUSAO)
+imp_individual = pd.read_parquet(config.IMPORTANCIA_PERMUTACAO)
+imp_grupos = pd.read_parquet(config.IMPORTANCIA_GRUPOS)
+coeficientes = pd.read_parquet(config.COEFICIENTES)
+shap_resumo = pd.read_parquet(config.SHAP_RESUMO)
+dependencia = pd.read_parquet(config.DEPENDENCIA_PARCIAL)
+
+decisao = evaluate.carregar_decisao()
+metadados = json.loads(config.MODELO_METADADOS.read_text(encoding="utf-8"))
+
+# Precisão ao inspecionar 100% da frota é, por definição, a taxa base de recall.
+taxa_base = float(ganho["precisao_na_faixa"].iloc[-1])
+
+ROTULOS_MODELO = {
+    "baseline": "Baseline trivial",
+    "regressao_logistica": "Reg. logística L2",
+    "random_forest": "Random Forest",
+    "xgboost": "XGBoost",
+}
+ROTULOS_CONJUNTO = {
+    "originais": "originais",
+    "sem_modelo": "sem modelo",
+    "com_derivadas": "com derivadas",
+}
+
+
+def rotular(linha) -> str:
+    """Nome legível de uma combinação modelo × conjunto de atributos."""
+    return f"{ROTULOS_MODELO[linha['modelo']]} · {ROTULOS_CONJUNTO[linha['conjunto']]}"
+```
+
+# Parte 2 — Modelo preditivo
+
+## Protocolo de validação
+
+A decisão metodológica mais importante desta parte é anterior à escolha do
+algoritmo: **como medir**. Com 499 registros, uma partição única de 20% deixa
+cerca de 100 observações no teste, e a métrica resultante carrega ±5 pontos
+percentuais apenas de ruído de particionamento — o suficiente para inverter a
+ordem de dois modelos por acaso.
+
+O protocolo adotado é `RepeatedStratifiedKFold` com **5 dobras repetidas 5
+vezes**. As 25 estimativas fornecem a média e o intervalo de confiança, e — por
+serem geradas sobre partições idênticas para todos os modelos — permitem
+comparação pareada.
+
+Foram comparadas **4 famílias de modelo** sobre **3 conjuntos de atributos**,
+totalizando 12 combinações. Os conjuntos não são variações arbitrárias: cada um
+testa uma hipótese levantada na Parte 1.
+
+| conjunto | atributos | hipótese testada |
+|---|---|---|
+| `originais` | modelo, idade, km, reclamações | referência: o dataset como recebido |
+| `sem_modelo` | idade, km, reclamações | `modelo` não discrimina ($p = 0{,}570$) |
+| `com_derivadas` | os 4 originais + 4 derivadas | normalizar por exposição acrescenta algo |
+
+::: {.callout-note}
+## Por que cada modelo tem o seu próprio pré-processamento
+
+A Regressão Logística exige escala comparável entre variáveis e sofre com a
+assimetria de 11,03 de `reclamacoes_por_10k_km`; árvores são indiferentes a
+ambos, por operarem sobre ordenação. Um pré-processador único penalizaria um dos
+dois lados sem motivo.
+
+Toda transformação que **aprende parâmetro** — padronização, `log1p`, codificação
+de categoria — vive dentro do `Pipeline`, ajustada apenas na partição de treino
+de cada dobra. Aplicada antes da validação cruzada, veria o conjunto inteiro e
+inflaria as métricas de forma invisível.
+:::
+
+## Comparação das 12 combinações
+
+```{python}
+#| label: tbl-comparacao
+#| tbl-cap: "Desempenho médio sobre 25 dobras. Ordenado por ROC AUC."
+
+exibicao = comparacao.assign(
+    combinacao=comparacao.apply(rotular, axis=1),
+    ic_roc_auc=lambda d: "["
+    + d["roc_auc_ic_inferior"].round(3).astype(str)
+    + "; "
+    + d["roc_auc_ic_superior"].round(3).astype(str)
+    + "]",
+)
+
+exibicao[
+    ["combinacao", "n_features", "roc_auc", "ic_roc_auc",
+     "accuracy", "precision", "recall", "f1", "brier"]
+].round(4)
+```
+
+```{python}
+#| label: fig-comparacao
+#| fig-cap: "ROC AUC por combinação, com intervalo de confiança de 95% sobre as 25 dobras. A faixa cinza marca um erro padrão abaixo do melhor resultado."
+
+ordenado = comparacao.sort_values("roc_auc").reset_index(drop=True)
+posicoes = np.arange(len(ordenado))
+erro = np.vstack([
+    ordenado["roc_auc"] - ordenado["roc_auc_ic_inferior"],
+    ordenado["roc_auc_ic_superior"] - ordenado["roc_auc"],
+])
+cores = [
+    viz.CINZA if m == "baseline" else viz.AZUL for m in ordenado["modelo"]
+]
+
+melhor = comparacao[comparacao["modelo"] != "baseline"]["roc_auc"].max()
+erro_padrao = comparacao.loc[comparacao["roc_auc"].idxmax(), "roc_auc_desvio"] / np.sqrt(25)
+
+fig, eixo = plt.subplots(figsize=(8.6, 5.2))
+eixo.axvspan(melhor - erro_padrao, melhor, color=viz.AZUL, alpha=0.10,
+             label="1 erro padrão do melhor")
+eixo.errorbar(
+    ordenado["roc_auc"], posicoes, xerr=erro, fmt="o",
+    color=viz.TINTA, ecolor=viz.TINTA_SUAVE, elinewidth=1.4, capsize=3, markersize=0,
+)
+eixo.scatter(ordenado["roc_auc"], posicoes, color=cores, s=55, zorder=3)
+eixo.axvline(0.5, color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.2,
+             label="acaso (0,5)")
+
+eixo.set_yticks(posicoes, [rotular(linha) for _, linha in ordenado.iterrows()])
+eixo.set_xlabel("ROC AUC")
+eixo.set_title("Todas as combinações razoáveis se sobrepõem")
+eixo.grid(axis="y", visible=False)
+eixo.legend(loc="lower right")
+
+fig.tight_layout()
+plt.show()
+```
+
+Três leituras imediatas. O **baseline trivial** fica em 0,5000 por construção —
+ele prevê sempre a classe majoritária e não ordena risco. O **XGBoost é
+consistentemente o pior** dos três modelos reais, e também o pior calibrado
+(Brier 0,2093 no seu pior conjunto contra 0,1872 da logística): com 499 linhas
+ele superajusta mesmo com `max_depth=3` e taxa de aprendizado de 0,05. E os
+intervalos de confiança das combinações de topo **se sobrepõem quase
+integralmente**.
+
+## As diferenças são reais ou ruído do protocolo?
+
+```{python}
+#| label: tbl-testes-pareados
+#| tbl-cap: "Comparação pareada contra a combinação escolhida, sobre as mesmas 25 dobras."
+
+testes.assign(combinacao=testes.apply(rotular, axis=1))[
+    ["combinacao", "diferenca_media", "p_ingenuo", "p_corrigido", "distinguivel"]
+].round(4)
+```
+
+::: {.achado}
+**O teste pareado convencional é enganoso aqui, e a correção muda o
+resultado.** O teste $t$ pareado pressupõe estimativas independentes. As 25
+dobras da validação cruzada repetida **não são independentes**: elas
+compartilham dados de treino, e a correlação resultante subestima a variância.
+
+Aplicada a correção de Nadeau-Bengio — que infla a variância pelo fator
+$1/k + n_{\text{teste}}/n_{\text{treino}}$ — o quadro se inverte. O $p$ ingênuo
+declara **7 de 11** comparações significantes; o $p$ corrigido, apenas **2**: o
+pior XGBoost e o baseline.
+
+**Conclusão: todas as combinações razoáveis são estatisticamente
+indistinguíveis entre si.** Escolher a de maior média seria selecionar ruído —
+as combinações de topo diferem por milésimos, contra um desvio de ~0,045 entre
+dobras.
+:::
+
+## Modelo escolhido e justificativa
+
+Se o desempenho não distingue as alternativas, o critério de escolha precisa ser
+outro — e declarado antes de olhar o resultado, não depois. A regra
+implementada é a convencional em validação cruzada: **entre todas as combinações
+cuja média está a menos de um erro padrão da melhor, fica a de menor número de
+atributos.**
+
+```{python}
+#| label: tbl-escolhido
+#| tbl-cap: "Modelo selecionado e a sua configuração."
+
+pd.DataFrame(
+    {
+        "item": [
+            "modelo", "atributos", "número de atributos",
+            "métrica de seleção", "valor", "semente", "protocolo",
+        ],
+        "valor": [
+            ROTULOS_MODELO[metadados["modelo"]],
+            ", ".join(metadados["colunas"]),
+            str(len(metadados["colunas"])),
+            metadados["metrica_selecao"],
+            f"{metadados['valor_metrica_selecao']:.4f}",
+            str(metadados["seed"]),
+            f"{metadados['n_dobras']} dobras × {metadados['n_repeticoes']} repetições",
+        ],
+    }
+)
+```
+
+**Regressão Logística com penalização L2, sobre `idade_veiculo`, `km` e
+`reclamacoes`.** A justificativa não é superioridade de desempenho — é
+parcimônia entre equivalentes:
+
+1. **Menos parâmetros estimados sobre 499 linhas.** Três atributos contra oito
+   da alternativa com derivadas, ou doze com as dummies de `modelo`.
+2. **Coeficientes interpretáveis**, que a Parte 4 converte em razão de chances
+   comunicável à área de negócio — algo que Random Forest e XGBoost não
+   oferecem diretamente.
+3. **Melhor calibração**, empatada com o Random Forest (Brier 0,1872) e à frente
+   do XGBoost. Isso importa mais do que o usual aqui, porque o ponto de corte da
+   Parte 3 é derivado de custo, e a otimização só faz sentido se a probabilidade
+   significar o que diz.
+
+A regularização L2 não é refinamento opcional: com VIF de 10,4 e 9,7 entre idade
+e km, a solução sem penalização teria coeficientes instáveis e de sinal
+potencialmente invertido. **A restrição diagnosticada na Parte 1 foi resolvida
+pela escolha do modelo, não ignorada.**
+
+## As três hipóteses da Parte 1, testadas
+
+```{python}
+#| label: tbl-hipoteses
+#| tbl-cap: "Efeito de cada conjunto de atributos, medido dobra a dobra dentro de cada família de modelo."
+
+chave = ["repeticao", "dobra"]
+
+
+def serie(modelo: str, conjunto: str) -> np.ndarray:
+    recorte = dobras[(dobras["modelo"] == modelo) & (dobras["conjunto"] == conjunto)]
+    return recorte.sort_values(chave)["roc_auc"].to_numpy()
+
+
+linhas = []
+for familia in ("regressao_logistica", "random_forest", "xgboost"):
+    base = serie(familia, "originais")
+    for conjunto, descricao in (
+        ("sem_modelo", "remover `modelo`"),
+        ("com_derivadas", "adicionar derivadas"),
+    ):
+        alternativa = serie(familia, conjunto)
+        _, p = train.teste_pareado_corrigido(alternativa, base)
+        linhas.append(
+            {
+                "família": ROTULOS_MODELO[familia],
+                "intervenção": descricao,
+                "efeito no ROC AUC": (alternativa - base).mean(),
+                "p corrigido": p,
+            }
+        )
+
+pd.DataFrame(linhas).round(4)
+```
+
+**Hipótese 1 — `modelo` não discrimina risco.** Confirmada. Removê-lo melhora a
+Regressão Logística (+0,0077) e é neutro no XGBoost (+0,0003). Piora o Random
+Forest (−0,0078) — direção oposta e magnitude equivalente, que é assinatura de
+ruído e não de sinal. O teste do qui-quadrado da Parte 1 ($p = 0{,}570$) se
+sustenta sob validação preditiva.
+
+**Hipótese 2 — as razões derivadas não acrescentam.** Confirmada sem exceção:
+−0,0002 na logística, −0,0072 no Random Forest, −0,0092 no XGBoost. Nenhuma
+família ganha com elas.
+
+::: {.achado}
+**Normalizar por exposição destrói o sinal.** A correlação das derivadas com o
+alvo é praticamente nula — `km_por_ano` em −0,021, `reclamacoes_por_ano` em
++0,062, `reclamacoes_por_10k_km` em −0,078 — contra +0,421 de
+`muitas_reclamacoes`. Toda a informação preditiva está nos **níveis absolutos**,
+não nas taxas.
+
+Isso tem uma consequência desconfortável e importante: `km_por_ano` **resolve a
+colinearidade mas não carrega sinal**. Ortogonaliza e esvazia. A engenharia de
+atributos que a Parte 1 propôs como solução para o VIF não funciona — e
+reportar isso é mais útil do que omitir o experimento.
+:::
+
+**Hipótese 3 — a colinearidade é gerenciável por regularização.** Confirmada. A
+logística penalizada lidera a comparação apesar do VIF de 10,4.
+
+# Parte 3 — Avaliação do modelo
+
+## O limiar é uma decisão de negócio
+
+As quatro métricas exigidas — Accuracy, Precision, Recall e F1 — não existem sem
+um ponto de corte. E o limiar convencional de 0,5 **não é neutro**: ele é o
+ótimo apenas quando os dois tipos de erro custam o mesmo.
+
+Em recall, não custam. Um **falso negativo** é um veículo defeituoso que passa
+despercebido — campanha tardia, exposição de segurança, custo de imagem. Um
+**falso positivo** é uma inspeção preventiva desnecessária — custo de oficina.
+Adotar 0,5 sem discutir isso é assumir custos simétricos sem nunca declarar a
+premissa.
+
+::: {.callout-important}
+## Premissa declarada, não medida
+
+Este desafio não fornece dados de custo. A razão adotada é
+**$C_{FN} = 3 \times C_{FP}$**, e a escolha do valor 3 é justificada pela
+análise de sensibilidade a seguir, não por convenção. Apenas a *razão* é
+identificável: multiplicar ambos os custos por uma constante não desloca o
+limiar ótimo.
+
+O parâmetro é editável em `config.py`, e a curva de sensibilidade existe
+justamente para que a área de pós-vendas possa reposicionar a decisão sem
+refazer a análise.
+:::
+
+## As quatro métricas exigidas
+
+```{python}
+#| label: tbl-metricas
+#| tbl-cap: "Métricas sobre predições fora da amostra, com IC estimado sobre as 5 repetições."
+
+metricas_finais.pivot(
+    index="metrica", columns="cenario", values="valor"
+).round(4).reindex(["accuracy", "precision", "recall", "f1"])
+```
+
+```{python}
+#| label: tbl-metricas-ic
+#| tbl-cap: "Detalhe com intervalo de confiança no limiar operacional."
+
+operacional = metricas_finais[metricas_finais["limiar"] != 0.5]
+operacional.assign(
+    ic="[" + operacional["ic_inferior"].round(3).astype(str)
+    + "; " + operacional["ic_superior"].round(3).astype(str) + "]"
+)[["metrica", "valor", "ic", "limiar"]].round(4)
+```
+
+::: {.achado}
+**O limiar derivado de custo não sacrifica desempenho global — ele o melhora.**
+Ao mover o corte de 0,5 para 0,231, o Recall sobe de 67,0% para **94,5%**, e o
+F1 sobe junto, de 0,675 para **0,736**.
+
+Isso desfaz o trade-off que se costuma assumir. O limiar de 0,5 não era um
+ponto equilibrado que estaríamos abandonando em favor de sensibilidade: era
+simplesmente um ponto ruim, herdado de um default.
+:::
+
+```{python}
+#| label: tbl-confusao
+#| tbl-cap: "Matriz de confusão no limiar operacional (média por repetição, 499 veículos)."
+
+confusao.pivot(index="real", columns="predito", values="n").round(1)
+```
+
+Em números absolutos: de 239 veículos que efetivamente tiveram recall, o modelo
+sinaliza **225,8** e deixa passar **13,2**. O custo é sinalizar **148,8**
+veículos sem recall.
+
+## Curvas de desempenho
+
+```{python}
+#| label: fig-curvas
+#| fig-cap: "Curva ROC e curva Precision-Recall, sobre a probabilidade média das 5 repetições."
+
+fig, (esq, dir) = plt.subplots(1, 2, figsize=(11.5, 4.4))
+
+esq.plot(roc["falso_positivo"], roc["verdadeiro_positivo"],
+         color=viz.AZUL, linewidth=2)
+esq.plot([0, 1], [0, 1], color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.3,
+         label="acaso")
+esq.fill_between(roc["falso_positivo"], roc["verdadeiro_positivo"],
+                 roc["falso_positivo"], color=viz.AZUL, alpha=0.12)
+esq.set_xlabel("taxa de falso positivo")
+esq.set_ylabel("taxa de verdadeiro positivo")
+esq.set_title(f"Curva ROC — AUC {metadados['valor_metrica_selecao']:.3f}")
+esq.legend(loc="lower right")
+
+dir.plot(pr["revocacao"], pr["precisao"], color=viz.AZUL_PROFUNDO, linewidth=2)
+dir.axhline(taxa_base, color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.3,
+            label=f"taxa base ({taxa_base:.1%})")
+dir.set_xlabel("revocação (recall)")
+dir.set_ylabel("precisão")
+dir.set_title("Curva Precision-Recall")
+dir.legend(loc="lower left")
+
+for eixo in (esq, dir):
+    eixo.set_xlim(0, 1)
+    eixo.set_ylim(0, 1.02)
+
+fig.tight_layout()
+plt.show()
+```
+
+A curva Precision-Recall é a mais informativa das duas neste problema. Com o
+custo do falso negativo acima do custo do falso positivo, o regime de interesse
+é o de **alto Recall** — a região direita do gráfico, onde a ROC comprime as
+diferenças e a PR as expõe. Ali se vê o preço real da sensibilidade: para levar
+o Recall acima de 90%, a precisão cai para a casa dos 60%.
+
+## Sensibilidade ao custo
+
+```{python}
+#| label: tbl-sensibilidade
+#| tbl-cap: "Limiar ótimo e consequências operacionais sob diferentes razões de custo."
+
+sensibilidade.assign(
+    razao=sensibilidade["razao_custo"].astype(int).astype(str) + ":1",
+    pct_frota=(sensibilidade["taxa_sinalizacao"] * 100).round(1).astype(str) + "%",
+)[
+    ["razao", "limiar", "accuracy", "precision", "recall", "f1",
+     "falsos_negativos", "n_sinalizados", "pct_frota", "ancora"]
+].round(4)
+```
+
+```{python}
+#| label: fig-sensibilidade
+#| fig-cap: "Como a decisão se desloca com a razão de custo. A âncora adotada (3:1) está destacada."
+
+fig, (esq, dir) = plt.subplots(1, 2, figsize=(11.5, 4.2))
+razoes = sensibilidade["razao_custo"]
+
+esq.plot(razoes, sensibilidade["limiar"], "o-", color=viz.AZUL, markersize=6)
+esq.fill_between(razoes, sensibilidade["limiar_ic_inferior"],
+                 sensibilidade["limiar_ic_superior"],
+                 color=viz.AZUL, alpha=0.15)
+esq.axhline(0.5, color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.2,
+            label="default (0,5)")
+esq.set_xscale("log")
+esq.set_xticks(razoes, [f"{int(r)}:1" for r in razoes])
+esq.set_xlabel("razão de custo FN:FP")
+esq.set_ylabel("limiar ótimo")
+esq.set_title("Limiar ótimo e sua estabilidade")
+esq.legend()
+
+dir.plot(razoes, sensibilidade["recall"], "o-", color=viz.AZUL_PROFUNDO,
+         markersize=6, label="Recall")
+dir.plot(razoes, sensibilidade["precision"], "s-", color=viz.AZUL,
+         markersize=5, label="Precision")
+dir.plot(razoes, sensibilidade["taxa_sinalizacao"], "^--", color=viz.CINZA,
+         markersize=5, label="% da frota sinalizada")
+dir.axhline(taxa_base, color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.2,
+            label="taxa base")
+dir.set_xscale("log")
+dir.set_xticks(razoes, [f"{int(r)}:1" for r in razoes])
+dir.set_xlabel("razão de custo FN:FP")
+dir.set_title("Consequência operacional")
+viz.rotular_percentual(dir)
+dir.legend(fontsize=8, loc="center right")
+
+for eixo, ancora in ((esq, sensibilidade), (dir, sensibilidade)):
+    eixo.axvline(config.RAZAO_CUSTO_ANCORA, color=viz.AZUL_PROFUNDO,
+                 linestyle="--", linewidth=1.6)
+    viz.apenas_grade_horizontal(eixo)
+
+fig.tight_layout()
+plt.show()
+```
+
+::: {.achado}
+**Por que 3:1 e não 10:1.** A partir de 5:1 a recomendação **degenera**: o
+limiar despenca, o modelo sinaliza 86% da frota e a Precision cai para 0,596 —
+contra uma taxa base de 0,479. Em 20:1 são 96% da frota, com Precision de
+0,509: o modelo praticamente deixa de selecionar qualquer coisa, entregando uma
+recomendação operacionalmente inútil com aparência de rigor.
+
+Em 3:1, a Precision de 0,605 permanece visivelmente acima da taxa base, o Recall
+de 0,950 é executável, e o F1 fica a 0,006 do máximo observado em toda a faixa
+(que está em 2:1). É o último ponto antes do colapso.
+
+O limiar resultante — 0,231, com IC [0,214; 0,248] — é **estável**: a
+recomendação não muda conforme a partição dos dados.
+:::
+
+## Calibração
+
+```{python}
+#| label: fig-calibracao
+#| fig-cap: "Probabilidade prevista contra frequência observada, em faixas de 10%. O tamanho do ponto é proporcional ao número de veículos na faixa."
+
+fig, eixo = plt.subplots(figsize=(6.4, 5.0))
+
+eixo.plot([0, 1], [0, 1], color=viz.COR_REFERENCIA, linestyle="--", linewidth=1.4,
+          label="calibração perfeita")
+eixo.scatter(calib["probabilidade_media"], calib["frequencia_observada"],
+             s=calib["n"] * 2.2, color=viz.AZUL, alpha=0.75, zorder=3,
+             label="faixas de risco")
+
+pior = calib.loc[calib["desvio"].abs().idxmax()]
+eixo.annotate(
+    f"pior faixa: prevê {pior['probabilidade_media']:.0%},\nobserva "
+    f"{pior['frequencia_observada']:.0%} (n={int(pior['n'])})",
+    xy=(pior["probabilidade_media"], pior["frequencia_observada"]),
+    xytext=(0.12, 0.82), fontsize=9, color=viz.COR_REFERENCIA,
+    arrowprops=dict(arrowstyle="->", color=viz.COR_REFERENCIA, linewidth=1.2),
+)
+
+eixo.set_xlabel("probabilidade média prevista")
+eixo.set_ylabel("frequência observada de recall")
+eixo.set_title("Diagrama de calibração")
+eixo.set_xlim(0, 1)
+eixo.set_ylim(0, 1)
+eixo.legend(loc="lower right")
+
+fig.tight_layout()
+plt.show()
+```
+
+::: {.limitacao}
+**Calibração é o ponto fraco do modelo.** O erro absoluto médio entre
+probabilidade prevista e frequência observada é de **0,0745**. As faixas
+extremas comportam-se bem, mas a faixa de 0,4 a 0,5 prevê 45% e observa 66%
+($n = 47$).
+
+Isso importa mais do que o usual neste trabalho: a otimização de limiar por
+custo **pressupõe que a probabilidade signifique o que diz**. No meio da escala
+ela não significa, o que introduz erro na escolha do ponto de corte — ainda que
+o limiar operacional de 0,231 caia em região razoavelmente calibrada.
+
+Melhoria proposta: `CalibratedClassifierCV` com calibração isotônica ou de
+Platt, ajustada dentro da validação cruzada.
+:::
+
+## O achado operacional: priorizar, não classificar
+
+No limiar de 3:1 o modelo sinaliza **75% da frota**. Esse número merece uma
+leitura franca: com ROC AUC de 0,79, qualquer corte que alcance Recall alto
+acaba sinalizando quase tudo. **O modelo não consegue excluir veículos com
+segurança.**
+
+O que ele consegue é **ordenar** — e essa é a capacidade que resolve o problema
+real de pós-vendas, onde a restrição não é decidir se um veículo merece inspeção,
+mas escolher quais inspecionar primeiro com capacidade de oficina limitada.
+
+```{python}
+#| label: fig-ganho
+#| fig-cap: "Curva de ganho acumulado: recalls encontrados ao inspecionar a frota em ordem decrescente de risco."
+
+fig, (esq, dir) = plt.subplots(1, 2, figsize=(11.5, 4.2))
+
+com_origem = pd.concat([
+    pd.DataFrame([{"pct_frota": 0.0, "pct_recalls_capturados": 0.0}]),
+    ganho[["pct_frota", "pct_recalls_capturados"]],
+], ignore_index=True)
+
+esq.plot(com_origem["pct_frota"], com_origem["pct_recalls_capturados"],
+         "o-", color=viz.AZUL, markersize=5, label="modelo")
+esq.plot([0, 1], [0, 1], color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.4,
+         label="inspeção aleatória")
+esq.fill_between(com_origem["pct_frota"], com_origem["pct_frota"],
+                 com_origem["pct_recalls_capturados"],
+                 color=viz.AZUL, alpha=0.13)
+
+destaque = ganho[ganho["faixa"] == 3].iloc[0]
+esq.annotate(
+    f"30% da frota →\n{destaque['pct_recalls_capturados']:.0%} dos recalls",
+    xy=(destaque["pct_frota"], destaque["pct_recalls_capturados"]),
+    xytext=(0.36, 0.30), fontsize=9.5, color=viz.TINTA, fontweight="semibold",
+    arrowprops=dict(arrowstyle="->", color=viz.TINTA, linewidth=1.3),
+)
+
+esq.set_xlabel("fração da frota inspecionada")
+esq.set_ylabel("recalls encontrados")
+esq.set_title("Ganho acumulado")
+viz.rotular_percentual(esq)
+esq.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+esq.legend(loc="lower right")
+
+dir.bar(ganho["pct_frota"], ganho["lift"], width=0.075,
+        color=viz.AZUL, alpha=0.9)
+dir.axhline(1.0, color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.4,
+            label="acaso (lift = 1)")
+dir.set_xlabel("fração da frota inspecionada")
+dir.set_ylabel("lift")
+dir.set_title("Quantas vezes melhor que sortear ao acaso")
+dir.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+dir.legend()
+
+for eixo in (esq, dir):
+    viz.apenas_grade_horizontal(eixo)
+
+fig.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-ganho
+#| tbl-cap: "Ganho por fatia de frota inspecionada."
+
+ganho.assign(
+    fatia=(ganho["pct_frota"] * 100).astype(int).astype(str) + "%",
+    captura=(ganho["pct_recalls_capturados"] * 100).round(1).astype(str) + "%",
+)[["fatia", "n_inspecionados", "recalls_capturados", "captura", "lift"]].round(2)
+```
+
+::: {.achado}
+**Inspecionar os 30% de maior risco encontra 49% dos recalls** — lift de 1,63,
+ou seja, 1,6 vez mais recalls do que sortear veículos ao acaso. Metade da frota
+captura 71%.
+
+Esta é a forma correta de comunicar o valor do modelo à diretoria: não "o
+modelo acerta 68% das vezes", e sim "com a mesma capacidade de oficina, esta
+priorização encontra 1,6 vez mais problemas".
+:::
+
+# Parte 4 — Interpretação
+
+## Quatro leituras, porque nenhuma basta sozinha
+
+A pergunta "quais variáveis importam" tem, neste dataset, quatro respostas
+parcialmente conflitantes — e o conflito é informativo. Cada método tem um ponto
+cego específico, e a colinearidade de 0,947 entre `idade_veiculo` e `km` ativa o
+ponto cego de dois deles.
+
+## Importância por permutação: individual contra bloco
+
+```{python}
+#| label: fig-importancia
+#| fig-cap: "Queda de ROC AUC ao destruir a relação de cada variável com o alvo. À esquerda, uma variável por vez; à direita, as colineares permutadas em bloco."
+
+fig, (esq, dir) = plt.subplots(1, 2, figsize=(11.5, 3.6))
+
+for eixo, tabela, titulo in (
+    (esq, imp_individual, "Uma variável por vez"),
+    (dir, imp_grupos, "Colineares em bloco"),
+):
+    ordenada = tabela.sort_values("queda_auc")
+    posicoes = np.arange(len(ordenada))
+    erro = np.vstack([
+        ordenada["queda_auc"] - ordenada["ic_inferior"],
+        ordenada["ic_superior"] - ordenada["queda_auc"],
+    ])
+    cores = [viz.AZUL_PROFUNDO if n > 1 else viz.AZUL for n in ordenada["n_variaveis"]]
+
+    eixo.barh(posicoes, ordenada["queda_auc"], color=cores, alpha=0.88, height=0.55)
+    eixo.errorbar(ordenada["queda_auc"], posicoes, xerr=erro, fmt="none",
+                  ecolor=viz.TINTA_SUAVE, elinewidth=1.3, capsize=3)
+    eixo.set_yticks(posicoes, [g.replace("_", " ") for g in ordenada["grupo"]])
+    eixo.set_xlabel("queda de ROC AUC")
+    eixo.set_title(titulo)
+    eixo.set_xlim(0, 0.175)
+    eixo.grid(axis="y", visible=False)
+
+soma = imp_individual.set_index("grupo").loc[["idade_veiculo", "km"], "queda_auc"].sum()
+bloco = imp_grupos.set_index("grupo").loc["tempo_e_uso", "queda_auc"]
+dir.annotate(
+    f"soma das partes: {soma:.4f}\nem bloco: {bloco:.4f}  ({bloco/soma:.2f}×)",
+    xy=(0.5, 0.18), xycoords="axes fraction", fontsize=9,
+    color=viz.COR_REFERENCIA, fontweight="semibold",
+)
+
+fig.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-importancia
+#| tbl-cap: "Importância por permutação, medida na partição de teste de cada dobra."
+
+pd.concat([
+    imp_individual.assign(leitura="individual"),
+    imp_grupos.assign(leitura="em bloco"),
+], ignore_index=True)[
+    ["leitura", "grupo", "n_variaveis", "queda_auc", "ic_inferior",
+     "ic_superior", "relevante"]
+].round(4)
+```
+
+::: {.achado}
+**A forma de medir inverte a conclusão.** Pela leitura individual,
+`reclamacoes` é a variável mais importante (0,0748), seguida de `km` (0,0644) e,
+bem atrás, `idade_veiculo` (0,0194). Pela leitura em bloco, `tempo_e_uso` domina
+com 0,1447 — **quase o dobro** de `reclamacoes`.
+
+O bloco vale **1,73 vez a soma das partes** (0,1447 contra 0,0838). A causa é o
+mascaramento por colinearidade: quando duas variáveis carregam a mesma
+informação, permutar uma delas quase não degrada o modelo — a outra cobre a
+ausência — e ambas parecem menos relevantes do que são.
+
+A leitura individual, que é a saída padrão de qualquer biblioteca de
+`permutation_importance`, **está errada neste dataset**. Reportá-la sem a
+correção levaria a área de negócio a concluir que a idade do veículo é quase
+irrelevante para o risco de recall — o oposto do que a Parte 1 mostrou, onde a
+taxa sobe de 4,9% aos 0 anos para 85,2% aos 8.
+:::
+
+Nota metodológica: a permutação é feita na partição de **teste** de cada dobra,
+com o modelo ajustado na partição de treino. Permutar sobre o treino mediria o
+quanto o modelo se apoiou na variável durante o ajuste, e não o quanto ela
+contribui para generalizar — que é a pergunta relevante.
+
+## Coeficientes e razão de chances
+
+```{python}
+#| label: tbl-coeficientes
+#| tbl-cap: "Coeficientes da Regressão Logística, em escala padronizada e em unidade de negócio."
+
+coeficientes[
+    ["variavel", "coeficiente_padronizado", "razao_chances_por_desvio",
+     "razao_chances_comunicavel", "unidade"]
+].round(4)
+```
+
+Em linguagem de negócio, mantidas as demais variáveis constantes:
+
+- cada **reclamação registrada** multiplica a chance de recall por **1,27**;
+- cada **10 mil km rodados**, por **1,14**;
+- cada **ano de idade**, por **1,11**.
+
+::: {.limitacao}
+**Estes três números não devem ser lidos isoladamente.** Sob colinearidade de
+0,947, a divisão do efeito entre `idade_veiculo` e `km` depende da amostra e da
+penalização L2, não do fenômeno. Reajustar o modelo com uma amostra diferente
+redistribuiria o peso entre as duas de forma imprevisível, mantendo o efeito
+conjunto estável.
+
+A leitura confiável é a do bloco `tempo_e_uso`. As razões de chances individuais
+de idade e km servem de ordem de grandeza, não de estimativa pontual.
+:::
+
+## SHAP
+
+```{python}
+#| label: tbl-shap
+#| tbl-cap: "Contribuição média absoluta de cada variável para a predição individual."
+
+shap_resumo.round(4)
+```
+
+::: {.callout-note}
+## Sobre o que o SHAP acrescenta — e o que não acrescenta
+
+A ordem produzida pelo SHAP reproduz exatamente a dos coeficientes
+padronizados, e isso é **matematicamente esperado**: para um modelo linear, o
+valor SHAP tem forma fechada — é o desvio padronizado multiplicado pelo
+coeficiente. **No nível agregado, o SHAP aqui não acrescenta informação alguma
+aos coeficientes.**
+
+Apresentá-lo como se fosse uma leitura independente seria inflar o aparato
+analítico. O valor real está no nível da **observação individual**: os valores
+por veículo, persistidos em `shap_valores.parquet`, permitem que o dashboard
+responda "por que *este* veículo está no topo da lista de inspeção" — que é uma
+pergunta que os coeficientes não respondem.
+:::
+
+## Dependência parcial
+
+```{python}
+#| label: fig-dependencia
+#| fig-cap: "Risco previsto em função de cada variável, com as demais promediadas."
+
+variaveis = list(metadados["colunas"])
+fig, eixos = plt.subplots(1, len(variaveis), figsize=(11.5, 3.5))
+
+titulos = {
+    "idade_veiculo": ("Idade do veículo", "anos"),
+    "km": ("Quilometragem", "km"),
+    "reclamacoes": ("Reclamações", "ocorrências"),
+}
+
+for eixo, variavel in zip(eixos, variaveis):
+    curva = dependencia[dependencia["variavel"] == variavel]
+    titulo, unidade = titulos[variavel]
+
+    eixo.plot(curva["valor"], curva["risco_previsto"],
+              color=viz.AZUL, linewidth=2.2)
+    eixo.axhline(decisao["limiar_operacional"], color=viz.AZUL_PROFUNDO,
+                 linestyle="--", linewidth=1.4,
+                 label=f"limiar ({decisao['limiar_operacional']:.3f})")
+    eixo.set_title(titulo)
+    eixo.set_xlabel(unidade)
+    eixo.set_ylim(0, 1)
+    viz.rotular_percentual(eixo)
+    viz.apenas_grade_horizontal(eixo)
+
+eixos[0].set_ylabel("risco previsto")
+eixos[1].xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v/1000:.0f}k"))
+eixos[-1].legend(fontsize=8)
+
+fig.tight_layout()
+plt.show()
+```
+
+As três curvas cruzam o limiar operacional em pontos que traduzem o modelo para
+regra prática. A leitura vale, porém, **apenas na região densa dos dados**: a
+dependência parcial avalia combinações que quase não ocorrem na frota — um
+veículo de 8 anos com 10 mil km, por exemplo — e as pontas de cada curva
+carregam essa extrapolação.
+
+## Limitações
+
+::: {.limitacao}
+**1. Os dados são sintéticos.** A curtose negativa de `idade` e `km` (−1,26 e
+−1,06) revela distribuições quase uniformes, e a rodagem anual implícita ficou
+100% dentro da faixa plausível — coerência perfeita demais para dado real. Um
+modelo ajustado aqui mede a capacidade de recuperar as regras do gerador, não a
+de prever recalls de campo.
+
+**2. Quatro preditoras apenas.** Faltam as dimensões que dominariam o problema
+real: fornecedor do componente, planta e lote de produção, tipo e severidade da
+falha, e a data da ocorrência. O ROC AUC de 0,79 deve ser lido como o teto
+destas quatro variáveis, não como o teto do problema.
+
+**3. Colinearidade de 0,947 impede atribuição individual.** O efeito conjunto de
+idade e quilometragem é estimável e estável; a repartição entre as duas, não.
+
+**4. Calibração fraca no meio da escala.** Erro absoluto médio de 0,0745, com a
+faixa 0,4–0,5 prevendo 45% e observando 66%. Compromete parcialmente a
+otimização do limiar por custo, que pressupõe probabilidades honestas.
+
+**5. Não há dimensão temporal real.** `idade_veiculo` é uma leitura de coorte,
+não uma série de ocorrências. "Evolução dos casos" no dashboard significa
+"perfil da frota por idade", e não tendência ao longo do tempo.
+
+**6. Sem busca de hiperparâmetros.** Decisão consciente: com 499 linhas e 25
+dobras, uma busca aninhada multiplicaria o custo para capturar ganho marginal, e
+ajustar hiperparâmetro na mesma partição que reporta a métrica é a forma mais
+comum de inflar resultado em amostra pequena.
+
+**7. O modelo do veículo não entra no modelo preditivo.** Não por omissão, mas
+porque não discrimina risco ($\chi^2(8) = 6{,}69$; $p = 0{,}570$) e a validação
+preditiva confirmou. O ranking de modelos pedido no dashboard é entregue com
+essa ressalva explícita.
+:::
+
+## Melhorias propostas
+
+| melhoria | o que resolve | esforço |
+|---|---|---|
+| `CalibratedClassifierCV` com calibração isotônica | o erro de calibração de 0,0745 no meio da escala, que compromete a otimização do limiar | baixo |
+| Busca de hiperparâmetros com validação cruzada aninhada | o ganho marginal deixado na mesa pelos parâmetros fixos, sem inflar a métrica reportada | médio |
+| Enriquecer com fornecedor, planta e lote de produção | a limitação **2** — é onde está o sinal que separaria defeito sistêmico de desgaste natural | alto (depende de integração de dados) |
+| Incluir data da ocorrência e da produção | permitiria detecção de tendência e alerta precoce por lote, substituindo a leitura de coorte | alto |
+| Revisar a razão de custo com pós-vendas | a premissa 3:1 é declarada, não medida; a curva de sensibilidade já está pronta para reposicionar a decisão | baixo |
+| Modelo de sobrevivência (tempo até o recall) | trataria o problema como "quando", e não como "se" — mais próximo da decisão real de campanha | alto |
+
+A ordem de prioridade não segue o esforço, e sim o retorno: **as melhorias 3 e 4
+valem mais do que todas as outras somadas.** Nenhum refinamento de algoritmo
+compensa a ausência das variáveis que efetivamente causam recall. O modelo aqui
+extrai o que quatro colunas permitem — e esse limite é de dados, não de método.

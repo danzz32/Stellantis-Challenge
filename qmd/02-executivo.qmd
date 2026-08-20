@@ -1,0 +1,332 @@
+---
+title: "Risco de Recall: Onde Inspecionar Primeiro"
+subtitle: "Sumário executivo · Diretoria de Qualidade e Pós-Vendas"
+author: "Desafio técnico · Bolsista Cientista de Dados"
+date: today
+date-format: "DD/MM/YYYY"
+format:
+  typst:
+    papersize: a4
+    margin:
+      x: 1.9cm
+      y: 1.9cm
+    fontsize: 10pt
+execute:
+  echo: false
+  warning: false
+---
+
+```{python}
+#| label: setup
+
+import json
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from stellantis_recall import build_mart, config, viz
+from stellantis_recall.modeling import evaluate
+
+viz.aplicar_tema()
+
+features = build_mart.carregar_features()
+segmentos = build_mart.carregar_agregado("matriz_segmentos")
+ganho = pd.read_parquet(config.CURVA_GANHO)
+confusao = pd.read_parquet(config.MATRIZ_CONFUSAO)
+coeficientes = pd.read_parquet(config.COEFICIENTES)
+metricas = pd.read_parquet(config.METRICAS_FINAIS)
+
+decisao = evaluate.carregar_decisao()
+metadados = json.loads(config.MODELO_METADADOS.read_text(encoding="utf-8"))
+
+n_veiculos = len(features)
+taxa_base = float(ganho["precisao_na_faixa"].iloc[-1])
+top30 = ganho[ganho["faixa"] == 3].iloc[0]
+top50 = ganho[ganho["faixa"] == 5].iloc[0]
+recall_op = float(
+    metricas.query("metrica == 'recall' and limiar != 0.5")["valor"].iloc[0]
+)
+MINIMO_AMOSTRA = 20
+
+
+def br(valor: float, casas: int = 2) -> str:
+    """Número no formato brasileiro: vírgula decimal."""
+    return f"{valor:.{casas}f}".replace(".", ",")
+```
+
+```{python}
+#| label: faixa-kpis
+#| fig-width: 7.2
+#| fig-height: 1.35
+
+fig, eixos = plt.subplots(1, 4, figsize=(7.2, 1.35))
+
+cartoes = [
+    (f"{n_veiculos}", "veículos analisados", viz.AZUL_PROFUNDO),
+    (f"{taxa_base:.0%}", "tiveram recall", viz.AZUL),
+    (f"{top30['pct_recalls_capturados']:.0%}", "dos recalls nos 30%\nmais críticos", viz.AZUL),
+    (f"{br(top30['lift'])}×", "melhor que inspeção\naleatória", viz.AZUL_PROFUNDO),
+]
+
+for eixo, (valor, rotulo, cor) in zip(eixos, cartoes):
+    eixo.axis("off")
+    eixo.add_patch(plt.Rectangle((0, 0), 1, 1, transform=eixo.transAxes,
+                                 facecolor=viz.FUNDO_DESTAQUE, edgecolor="none"))
+    eixo.text(0.5, 0.66, valor, ha="center", va="center", fontsize=21,
+              fontweight="bold", color=cor, transform=eixo.transAxes)
+    eixo.text(0.5, 0.20, rotulo, ha="center", va="center", fontsize=7.4,
+              color=viz.TINTA_SUAVE, transform=eixo.transAxes, linespacing=1.4)
+
+fig.tight_layout(pad=0.4)
+plt.show()
+```
+
+## A recomendação
+
+**Priorize inspeções pelo perfil de uso do veículo, não pelo modelo.** Um modelo
+estatístico treinado sobre `{python} n_veiculos` registros de garantia ordena a
+frota por risco de recall usando três informações já disponíveis: **idade**,
+**quilometragem** e **número de reclamações registradas**.
+
+Inspecionando os veículos em ordem decrescente de risco:
+
+- **30% da frota → `{python} f"{top30['pct_recalls_capturados']:.0%}"` dos recalls.**
+  Com a mesma capacidade de oficina, encontram-se
+  `{python} br(top30['lift'])` vezes mais problemas do que sorteando
+  veículos.
+- **50% da frota → `{python} f"{top50['pct_recalls_capturados']:.0%}"` dos recalls.**
+- Ampliando a cobertura ao máximo recomendado, o modelo antecipa
+  **`{python} f"{recall_op:.0%}"`** dos recalls.
+
+**O modelo do veículo não deve orientar a priorização.** A diferença de taxa de
+recall entre Toro (57%) e Fastback (37%) parece grande, mas está inteiramente
+dentro da margem de erro amostral — os testes estatísticos não encontram
+associação entre modelo e risco. Um ranking por modelo direcionaria inspeções
+por ruído.
+
+```{python}
+#| label: fig-ganho
+#| fig-cap: "Recalls encontrados conforme a fração da frota inspecionada, em ordem decrescente de risco."
+#| fig-width: 7.2
+#| fig-height: 2.9
+
+com_origem = pd.concat([
+    pd.DataFrame([{"pct_frota": 0.0, "pct_recalls_capturados": 0.0}]),
+    ganho[["pct_frota", "pct_recalls_capturados"]],
+], ignore_index=True)
+
+fig, eixo = plt.subplots(figsize=(7.2, 2.9))
+eixo.plot(com_origem["pct_frota"], com_origem["pct_recalls_capturados"],
+          "o-", color=viz.AZUL, markersize=5.5, linewidth=2.4,
+          label="priorização pelo modelo")
+eixo.plot([0, 1], [0, 1], color=viz.COR_REFERENCIA, linestyle="--",
+          linewidth=1.4, label="inspeção aleatória")
+eixo.fill_between(com_origem["pct_frota"], com_origem["pct_frota"],
+                  com_origem["pct_recalls_capturados"],
+                  color=viz.AZUL, alpha=0.14)
+
+for faixa, deslocamento in ((3, (0.36, 0.24)), (5, (0.60, 0.50))):
+    ponto = ganho[ganho["faixa"] == faixa].iloc[0]
+    eixo.annotate(
+        f"{ponto['pct_frota']:.0%} → {ponto['pct_recalls_capturados']:.0%}",
+        xy=(ponto["pct_frota"], ponto["pct_recalls_capturados"]),
+        xytext=deslocamento, fontsize=9, color=viz.AZUL_PROFUNDO,
+        fontweight="semibold",
+        arrowprops=dict(arrowstyle="->", color=viz.AZUL_PROFUNDO, linewidth=1.2),
+    )
+
+eixo.set_xlabel("fração da frota inspecionada")
+eixo.set_ylabel("recalls encontrados")
+viz.rotular_percentual(eixo)
+viz.rotular_percentual_x(eixo)
+viz.apenas_grade_horizontal(eixo)
+eixo.legend(loc="lower right")
+fig.tight_layout()
+plt.show()
+```
+
+{{< pagebreak >}}
+
+## O que aumenta o risco
+
+Mantidas as demais condições constantes, cada fator multiplica a chance de
+recall por:
+
+```{python}
+#| label: fatores
+#| output: asis
+
+print(pd.DataFrame(
+    {
+        "Fator": [
+            "Cada reclamação registrada",
+            "Cada 10 mil km rodados",
+            "Cada ano de idade",
+        ],
+        "Multiplica a chance de recall por": [
+            f"{br(coeficientes.set_index('variavel').loc[v, 'razao_chances_comunicavel'])}×"
+            for v in ("reclamacoes", "km", "idade_veiculo")
+        ],
+    }
+).to_markdown(index=False))
+```
+
+A leitura prática: **reclamação registrada é o sinal mais forte e mais precoce**.
+Um veículo com 3 ou mais reclamações tem risco de recall acima de 58%, contra
+28% para veículos com 2 — um salto abrupto que torna esse número um gatilho
+operacional direto, sem necessidade de cálculo.
+
+Idade e quilometragem atuam juntas e não devem ser lidas em separado: na prática
+elas medem a mesma coisa — o desgaste acumulado.
+
+```{python}
+#| label: fig-segmentos
+#| fig-cap: "Taxa de recall por segmento da frota. Segmentos com menos de 20 veículos não são exibidos por insuficiência amostral."
+#| fig-width: 7.2
+#| fig-height: 2.6
+
+pivo = segmentos.pivot(index="faixa_idade", columns="faixa_km", values="taxa_recall")
+contagem = segmentos.pivot(index="faixa_idade", columns="faixa_km", values="n_veiculos")
+
+ordem_idade = [i for i in (
+    "0-1 anos (novo)", "2-3 anos (garantia)",
+    "4-5 anos (pos-garantia)", "6+ anos (maduro)",
+) if i in pivo.index]
+ordem_km = [k for k in (
+    "ate 25 mil km", "25-75 mil km", "75-125 mil km", "acima de 125 mil km",
+) if k in pivo.columns]
+pivo = pivo.reindex(index=ordem_idade, columns=ordem_km)
+contagem = contagem.reindex(index=ordem_idade, columns=ordem_km)
+exibida = pivo.mask(contagem.fillna(0) < MINIMO_AMOSTRA)
+
+fig, eixo = plt.subplots(figsize=(7.2, 2.6))
+imagem = eixo.imshow(exibida, cmap=viz.MAPA_RISCO, vmin=0, vmax=1, aspect="auto")
+
+for i in range(len(pivo.index)):
+    for j in range(len(pivo.columns)):
+        n = contagem.iloc[i, j]
+        if pd.isna(n) or n < MINIMO_AMOSTRA:
+            eixo.text(j, i, "—", ha="center", va="center",
+                      color=viz.TINTA_SUAVE, fontsize=10)
+            continue
+        taxa = pivo.iloc[i, j]
+        eixo.text(j, i, f"{taxa:.0%}", ha="center", va="center",
+                  color=viz.BRANCO if taxa > 0.45 else viz.AZUL_PROFUNDO,
+                  fontsize=10, fontweight="bold")
+
+eixo.set_xticks(range(len(pivo.columns)),
+                [c.replace(" mil km", "k").replace("acima de ", ">").replace("ate ", "≤")
+                 for c in pivo.columns], fontsize=8.5)
+eixo.set_yticks(range(len(pivo.index)),
+                [i.split(" (")[0] for i in pivo.index], fontsize=8.5)
+eixo.grid(False)
+fig.colorbar(imagem, ax=eixo, shrink=0.9, label="taxa de recall")
+fig.tight_layout()
+plt.show()
+```
+
+## O que a recomendação custa
+
+Aplicada à base analisada, a priorização recomendada produz:
+
+```{python}
+#| label: custo
+#| output: asis
+
+celulas = confusao.set_index("celula")["n"]
+total_recalls = celulas["verdadeiros_positivos"] + celulas["falsos_negativos"]
+
+print(pd.DataFrame(
+    {
+        "Resultado": [
+            "Recalls antecipados pelo modelo",
+            "Recalls não antecipados",
+            "Inspeções sem achado",
+            "Veículos corretamente não sinalizados",
+        ],
+        "Veículos": [
+            f"{celulas['verdadeiros_positivos']:.0f}",
+            f"{celulas['falsos_negativos']:.0f}",
+            f"{celulas['falsos_positivos']:.0f}",
+            f"{celulas['verdadeiros_negativos']:.0f}",
+        ],
+        "Leitura": [
+            f"{celulas['verdadeiros_positivos'] / total_recalls:.0%} de todos os recalls",
+            "campanha permanece reativa nestes casos",
+            "custo de oficina sem retorno",
+            "capacidade preservada",
+        ],
+    }
+).to_markdown(index=False))
+```
+
+Esse equilíbrio decorre de uma premissa explícita: **um recall não antecipado
+custa três vezes mais que uma inspeção desnecessária**. A premissa é editável.
+Adotar uma razão mais conservadora aumenta a cobertura, mas com retorno
+decrescente rápido — a partir de 5:1 a recomendação converge para "inspecionar
+quase toda a frota", o que deixa de ser priorização.
+
+{{< pagebreak >}}
+
+## O que este modelo não faz
+
+**Não substitui a análise de engenharia.** Ele ordena risco a partir de sintomas
+(idade, uso, reclamações), não de causas. Não identifica qual componente falha
+nem por quê.
+
+**Não exclui veículos com segurança.** A capacidade de discriminação é
+moderada. O uso correto é ordenar a fila de inspeção, não decidir quais veículos
+dispensar.
+
+**Não enxerga a origem do defeito.** Faltam na base as variáveis que
+determinariam um recall real: fornecedor do componente, planta e lote de
+produção, tipo e severidade da falha, data da ocorrência. **Este é o principal
+limitador — e é de dados, não de método.**
+
+**Não tem leitura temporal.** Sem datas na base, "evolução" significa perfil da
+frota por idade, e não tendência ao longo do tempo. O modelo não detecta um lote
+problemático entrando em campo agora.
+
+::: {.callout-note appearance="simple"}
+Os dados utilizados são **sintéticos**, fornecidos no enunciado do desafio.
+Nenhum número deste documento descreve a frota real da Stellantis; o que se
+demonstra é o método.
+:::
+
+## Próximos passos
+
+```{python}
+#| label: passos
+#| output: asis
+
+print(pd.DataFrame(
+    {
+        "Ação": [
+            "Validar a razão de custo 3:1 com Pós-Vendas",
+            "Integrar fornecedor, planta e lote de produção",
+            "Incluir datas de produção e de ocorrência",
+            "Piloto em uma regional",
+        ],
+        "Retorno esperado": [
+            "ajusta o ponto de corte à realidade operacional",
+            "permite atribuir risco à origem do defeito, não ao sintoma",
+            "habilita alerta precoce por lote em vez de leitura de coorte",
+            "mede o ganho real de inspeções priorizadas contra o processo atual",
+        ],
+        "Prazo": ["imediato", "médio", "médio", "curto"],
+    }
+).to_markdown(index=False))
+```
+
+As duas ações de integração de dados valem mais do que qualquer refinamento
+adicional do modelo. Com as quatro variáveis disponíveis hoje, o ganho de
+`{python} br(top30['lift'])`× sobre a inspeção aleatória está próximo do
+teto. **O caminho para melhorar não passa por um algoritmo melhor, e sim por
+dados que expliquem a origem da falha.**
+
+---
+
+*Detalhamento metodológico completo — validação, comparação de modelos,
+interpretação e limitações — no relatório técnico e no painel interativo que
+acompanham esta entrega.*

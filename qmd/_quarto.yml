@@ -4,6 +4,8 @@ project:
   output-dir: ../reports
   render:
     - 01-analise.qmd
+    - 02-executivo.qmd
+    - dashboard.qmd
 
 lang: pt
 
@@ -14,20 +16,7 @@ execute:
 
 jupyter: python3
 
-format:
-  html:
-    theme: [cosmo, theme.scss]
-    toc: true
-    toc-depth: 3
-    toc-title: "Conteúdo"
-    number-sections: true
-    number-depth: 2
-    code-fold: true
-    code-summary: "código"
-    code-tools: true
-    code-line-numbers: false
-    fig-align: center
-    fig-responsive: true
-    tbl-cap-location: top
-    embed-resources: true
-    smooth-scroll: true
+# O formato fica no cabeçalho de cada documento, e não aqui. O relatório é
+# `html` e o painel é `dashboard`; declarado no nível do projeto, o formato se
+# somaria ao de cada documento e o Quarto tentaria produzir as duas saídas para
+# ambos, colidindo no mesmo arquivo de destino.

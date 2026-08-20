@@ -27,12 +27,21 @@ import pandas as pd
 from . import config, eda, features, transform
 from .schemas import AgregadoRiscoSchema, FeaturesSchema
 
-#: Consulta -> arquivo de destino na camada mart.
-AGREGADOS: dict[str, Path] = {
+#: Consultas que rodam sobre a camada `trusted`.
+AGREGADOS_TRUSTED: dict[str, Path] = {
     "perfil_por_modelo": config.MART_PERFIL_MODELO,
     "evolucao_por_idade": config.MART_EVOLUCAO_IDADE,
     "ranking_risco": config.MART_RANKING_RISCO,
 }
+
+#: Consultas que rodam sobre a tabela de atributos, por dependerem das faixas
+#: construidas em `features.py`.
+AGREGADOS_FEATURES: dict[str, Path] = {
+    "matriz_segmentos": config.MART_MATRIZ_SEGMENTOS,
+}
+
+#: Uniao das duas familias, para leitura pelo nome da consulta.
+AGREGADOS: dict[str, Path] = {**AGREGADOS_TRUSTED, **AGREGADOS_FEATURES}
 
 #: Agregados que expoem taxa com intervalo de confianca.
 AGREGADOS_COM_IC: frozenset[str] = frozenset({"ranking_risco"})
@@ -48,14 +57,29 @@ def construir_features(trusted: pd.DataFrame) -> pd.DataFrame:
     return FeaturesSchema.validate(features.adicionar_features(trusted), lazy=True)
 
 
-def construir_agregados(origem: Path | None = None) -> dict[str, pd.DataFrame]:
-    """Executa as consultas de `sql/` sobre o Parquet `trusted`."""
-    origem = origem or config.TRUSTED_VEICULOS
-    con = eda.conectar_parquet(origem)
+def _consultar_parquet(caminho: Path, nomes: dict[str, Path]) -> dict[str, pd.DataFrame]:
+    """Roda um conjunto de consultas contra um Parquet, lido direto pelo DuckDB."""
+    con = eda.conectar_parquet(caminho)
     try:
-        resultados = {nome: eda.consultar(con, nome) for nome in AGREGADOS}
+        return {nome: eda.consultar(con, nome) for nome in nomes}
     finally:
         con.close()
+
+
+def construir_agregados(
+    origem: Path | None = None,
+    features: Path | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Executa as consultas de `sql/` sobre as camadas correspondentes.
+
+    Duas origens porque as consultas tem pre-requisitos diferentes: as de perfil
+    e risco precisam apenas do dado limpo, enquanto a matriz de segmentos depende
+    das faixas construidas na tabela de atributos.
+    """
+    resultados = {
+        **_consultar_parquet(origem or config.TRUSTED_VEICULOS, AGREGADOS_TRUSTED),
+        **_consultar_parquet(features or config.MART_FEATURES, AGREGADOS_FEATURES),
+    }
 
     for nome in AGREGADOS_COM_IC:
         AgregadoRiscoSchema.validate(resultados[nome], lazy=True)
@@ -87,12 +111,16 @@ def executar(
     trusted = transform.carregar(origem)
 
     tabela_features = construir_features(trusted)
+
+    # A tabela de atributos e gravada antes de agregar: `matriz_segmentos`
+    # depende das faixas e le o Parquet de features diretamente pelo DuckDB.
+    config.garantir_diretorios()
+    tabela_features.to_parquet(config.MART_FEATURES, index=False)
+
     agregados = construir_agregados(origem)
 
     caminhos: dict[str, Path] = {"features": config.MART_FEATURES, **AGREGADOS}
     if persistir:
-        config.garantir_diretorios()
-        tabela_features.to_parquet(config.MART_FEATURES, index=False)
         for nome, destino in AGREGADOS.items():
             agregados[nome].to_parquet(destino, index=False)
 

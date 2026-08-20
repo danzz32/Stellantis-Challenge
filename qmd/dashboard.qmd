@@ -1,0 +1,711 @@
+---
+title: "Risco de Recall — Painel de Garantia"
+author: "Desafio técnico · Bolsista Cientista de Dados"
+format:
+  dashboard:
+    theme: [cosmo, theme.scss]
+    orientation: rows
+    nav-buttons:
+      - icon: file-earmark-pdf
+        href: 02-executivo.pdf
+        text: Sumário executivo (PDF)
+      - icon: file-earmark-text
+        href: 01-analise.html
+        text: Relatório técnico
+    embed-resources: true
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+import json
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from stellantis_recall import build_mart, config, eda, transform, viz
+from stellantis_recall.modeling import evaluate
+
+viz.aplicar_tema()
+
+# Camada mart — mesma fonte que o relatório usa.
+features = build_mart.carregar_features()
+ranking = build_mart.carregar_agregado("ranking_risco")
+evolucao = build_mart.carregar_agregado("evolucao_por_idade")
+perfil = build_mart.carregar_agregado("perfil_por_modelo")
+segmentos = build_mart.carregar_agregado("matriz_segmentos")
+qualidade = pd.read_parquet(config.RELATORIO_QUALIDADE)
+
+# Artefatos de modelagem.
+comparacao = pd.read_parquet(config.COMPARACAO_MODELOS)
+testes = pd.read_parquet(config.TESTES_PAREADOS)
+metricas_finais = pd.read_parquet(config.METRICAS_FINAIS)
+sensibilidade = pd.read_parquet(config.SENSIBILIDADE_CUSTO)
+roc = pd.read_parquet(config.CURVA_ROC)
+pr = pd.read_parquet(config.CURVA_PR)
+calib = pd.read_parquet(config.CALIBRACAO)
+ganho = pd.read_parquet(config.CURVA_GANHO)
+confusao = pd.read_parquet(config.MATRIZ_CONFUSAO)
+imp_individual = pd.read_parquet(config.IMPORTANCIA_PERMUTACAO)
+imp_grupos = pd.read_parquet(config.IMPORTANCIA_GRUPOS)
+coeficientes = pd.read_parquet(config.COEFICIENTES)
+dependencia = pd.read_parquet(config.DEPENDENCIA_PARCIAL)
+
+decisao = evaluate.carregar_decisao()
+metadados = json.loads(config.MODELO_METADADOS.read_text(encoding="utf-8"))
+
+n_veiculos = len(features)
+taxa_base = float(ganho["precisao_na_faixa"].iloc[-1])
+destaque_30 = ganho[ganho["faixa"] == 3].iloc[0]
+
+ROTULOS_MODELO = {
+    "baseline": "Baseline trivial",
+    "regressao_logistica": "Reg. logística L2",
+    "random_forest": "Random Forest",
+    "xgboost": "XGBoost",
+}
+ROTULOS_CONJUNTO = {
+    "originais": "originais",
+    "sem_modelo": "sem modelo",
+    "com_derivadas": "com derivadas",
+}
+
+#: Abaixo deste número de veículos, a taxa de uma célula é ruído e não estimativa.
+MINIMO_AMOSTRA = 20
+
+
+def rotular(linha) -> str:
+    return f"{ROTULOS_MODELO[linha['modelo']]} · {ROTULOS_CONJUNTO[linha['conjunto']]}"
+```
+
+# Visão executiva
+
+## Linha {height="22%"}
+
+```{python}
+#| content: valuebox
+#| title: "Veículos na base"
+dict(icon="car-front", color=viz.AZUL_PROFUNDO, value=f"{n_veiculos}")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Taxa de recall observada"
+dict(icon="exclamation-diamond", color=viz.AZUL, value=f"{taxa_base:.1%}")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Recalls achados nos 30% mais críticos"
+dict(
+    icon="bullseye",
+    color=viz.AZUL,
+    value=f"{destaque_30['pct_recalls_capturados']:.0%}",
+)
+```
+
+```{python}
+#| content: valuebox
+#| title: "Ganho sobre inspeção aleatória"
+dict(icon="graph-up-arrow", color=viz.AZUL_PROFUNDO, value=f"{destaque_30['lift']:.2f}×")
+```
+
+## Linha {height="45%"}
+
+### Coluna {width="58%"}
+
+```{python}
+#| title: "Quanto se encontra inspecionando em ordem de risco"
+
+com_origem = pd.concat([
+    pd.DataFrame([{"pct_frota": 0.0, "pct_recalls_capturados": 0.0}]),
+    ganho[["pct_frota", "pct_recalls_capturados"]],
+], ignore_index=True)
+
+fig, eixo = plt.subplots(figsize=(7.6, 4.4))
+eixo.plot(com_origem["pct_frota"], com_origem["pct_recalls_capturados"],
+          "o-", color=viz.AZUL, markersize=6, linewidth=2.4,
+          label="priorização pelo modelo")
+eixo.plot([0, 1], [0, 1], color=viz.COR_REFERENCIA, linestyle="--",
+          linewidth=1.5, label="inspeção aleatória")
+eixo.fill_between(com_origem["pct_frota"], com_origem["pct_frota"],
+                  com_origem["pct_recalls_capturados"],
+                  color=viz.AZUL, alpha=0.14)
+
+eixo.annotate(
+    f"inspecionar 30% da frota\nencontra {destaque_30['pct_recalls_capturados']:.0%} dos recalls",
+    xy=(destaque_30["pct_frota"], destaque_30["pct_recalls_capturados"]),
+    xytext=(0.38, 0.26), fontsize=10, color=viz.AZUL_PROFUNDO,
+    fontweight="semibold",
+    arrowprops=dict(arrowstyle="->", color=viz.AZUL_PROFUNDO, linewidth=1.4),
+)
+
+eixo.set_xlabel("fração da frota inspecionada")
+eixo.set_ylabel("recalls encontrados")
+viz.rotular_percentual(eixo)
+viz.rotular_percentual_x(eixo)
+viz.apenas_grade_horizontal(eixo)
+eixo.legend(loc="lower right")
+fig.tight_layout()
+plt.show()
+```
+
+::: {.nota-card}
+📄 **[Abrir o sumário executivo em PDF](02-executivo.pdf)** — 3 páginas com a
+recomendação, o que a sustenta e os próximos passos. ·
+📊 **[Relatório técnico completo](01-analise.html)** — metodologia, validação e
+limitações.
+:::
+
+### Coluna {width="42%"}
+
+```{python}
+#| title: "Onde o risco se concentra"
+
+pivo = segmentos.pivot(index="faixa_idade", columns="faixa_km", values="taxa_recall")
+contagem = segmentos.pivot(index="faixa_idade", columns="faixa_km", values="n_veiculos")
+
+ordem_idade = [i for i in (
+    "0-1 anos (novo)", "2-3 anos (garantia)",
+    "4-5 anos (pos-garantia)", "6+ anos (maduro)",
+) if i in pivo.index]
+ordem_km = [k for k in (
+    "ate 25 mil km", "25-75 mil km", "75-125 mil km", "acima de 125 mil km",
+) if k in pivo.columns]
+pivo = pivo.reindex(index=ordem_idade, columns=ordem_km)
+contagem = contagem.reindex(index=ordem_idade, columns=ordem_km)
+
+# Células com amostra insuficiente são suprimidas: uma taxa sobre 1 veículo
+# não é estimativa, e exibi-la colorida convidaria à leitura errada.
+mascara = contagem.fillna(0) < MINIMO_AMOSTRA
+exibida = pivo.mask(mascara)
+
+fig, eixo = plt.subplots(figsize=(5.6, 4.4))
+imagem = eixo.imshow(exibida, cmap=viz.MAPA_RISCO, vmin=0, vmax=1, aspect="auto")
+
+for i in range(len(pivo.index)):
+    for j in range(len(pivo.columns)):
+        n = contagem.iloc[i, j]
+        if pd.isna(n) or n < MINIMO_AMOSTRA:
+            eixo.text(j, i, "n/d", ha="center", va="center",
+                      color=viz.TINTA_SUAVE, fontsize=8.5, style="italic")
+            continue
+        taxa = pivo.iloc[i, j]
+        eixo.text(j, i, f"{taxa:.0%}\nn={int(n)}", ha="center", va="center",
+                  color=viz.BRANCO if taxa > 0.45 else viz.AZUL_PROFUNDO,
+                  fontsize=9, fontweight="semibold")
+
+eixo.set_xticks(range(len(pivo.columns)),
+                [c.replace(" mil km", "k").replace("acima de ", ">").replace("ate ", "≤")
+                 for c in pivo.columns])
+eixo.set_yticks(range(len(pivo.index)),
+                [i.split(" (")[0] for i in pivo.index])
+eixo.grid(False)
+fig.colorbar(imagem, ax=eixo, shrink=0.85, label="taxa de recall")
+fig.tight_layout()
+plt.show()
+```
+
+::: {.nota-card}
+Células com menos de `{python} MINIMO_AMOSTRA` veículos aparecem como **n/d** —
+a taxa existe, mas não é estimativa confiável.
+:::
+
+## Linha {height="33%"}
+
+```{python}
+#| title: "Ranking de risco por modelo — com a incerteza à vista"
+
+ordenado = ranking.sort_values("taxa_recall")
+posicoes = np.arange(len(ordenado))
+erro = np.vstack([
+    ordenado["taxa_recall"] - ordenado["ic_inferior"],
+    ordenado["ic_superior"] - ordenado["taxa_recall"],
+])
+
+fig, eixo = plt.subplots(figsize=(12.0, 3.4))
+eixo.barh(posicoes, ordenado["taxa_recall"],
+          color=[viz.cor_por_risco(t, 0.2, 0.8) for t in ordenado["taxa_recall"]],
+          height=0.6, edgecolor=viz.GRADE)
+eixo.errorbar(ordenado["taxa_recall"], posicoes, xerr=erro, fmt="none",
+              ecolor=viz.AZUL_PROFUNDO, elinewidth=1.6, capsize=4)
+eixo.axvline(taxa_base, color=viz.COR_REFERENCIA, linestyle="--", linewidth=1.5,
+             label=f"taxa global ({taxa_base:.1%})")
+
+eixo.set_yticks(posicoes, ordenado["modelo"])
+eixo.set_xlabel("taxa de recall")
+viz.rotular_percentual_x(eixo)
+eixo.grid(axis="y", visible=False)
+eixo.legend(loc="lower right")
+fig.tight_layout()
+plt.show()
+```
+
+::: {.nota-card}
+**Este ranking não é estatisticamente sustentável, e a barra de erro mostra por
+quê.** O intervalo do primeiro colocado contém integralmente o do último, e o
+teste de independência não rejeita a hipótese de que o modelo do veículo é
+irrelevante para o risco (χ²(8) = 6,69; p = 0,570). Com cerca de 55 veículos por
+modelo, a incerteza é de ±13 pontos percentuais. **Priorizar inspeções por este
+ranking seria priorizar por ruído amostral.**
+:::
+
+# Perfil da frota
+
+## Linha {height="50%"}
+
+### Coluna
+
+```{python}
+#| title: "Evolução do risco ao longo da vida do veículo"
+
+ic_inf, ic_sup = eda.intervalo_wilson(
+    evolucao["n_recalls"], evolucao["n_veiculos"]
+)
+
+fig, eixo = plt.subplots(figsize=(7.4, 4.2))
+eixo.plot(evolucao["idade_veiculo"], evolucao["taxa_recall"], "o-",
+          color=viz.AZUL, markersize=7, linewidth=2.4, label="taxa por idade")
+eixo.fill_between(evolucao["idade_veiculo"], ic_inf, ic_sup,
+                  color=viz.AZUL, alpha=0.16, label="IC 95%")
+eixo.plot(evolucao["idade_veiculo"], evolucao["taxa_recall_acumulada"],
+          "s--", color=viz.TINTA_SUAVE, markersize=5, linewidth=1.6,
+          label="acumulado da frota")
+eixo.axhline(taxa_base, color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.4)
+
+eixo.set_xlabel("idade do veículo (anos)")
+eixo.set_ylabel("taxa de recall")
+viz.rotular_percentual(eixo)
+viz.apenas_grade_horizontal(eixo)
+eixo.legend(loc="upper left")
+fig.tight_layout()
+plt.show()
+```
+
+::: {.nota-card}
+`idade_veiculo` é a **única** dimensão temporal do dataset. Esta é uma leitura de
+coorte — perfil da frota por idade — e não uma série temporal de ocorrências.
+:::
+
+### Coluna
+
+```{python}
+#| title: "Reclamações acumuladas e risco"
+
+por_reclamacoes = (
+    features.assign(alvo=features[config.COLUNA_ALVO].astype(int))
+    .groupby("reclamacoes", as_index=False)
+    .agg(n=("alvo", "size"), n_recalls=("alvo", "sum"))
+)
+por_reclamacoes["taxa"] = por_reclamacoes["n_recalls"] / por_reclamacoes["n"]
+robustos = por_reclamacoes[por_reclamacoes["n"] >= 10]
+ic_inf_r, ic_sup_r = eda.intervalo_wilson(robustos["n_recalls"], robustos["n"])
+
+fig, eixo = plt.subplots(figsize=(7.4, 4.2))
+eixo.errorbar(
+    robustos["reclamacoes"], robustos["taxa"],
+    yerr=np.vstack([robustos["taxa"] - ic_inf_r, ic_sup_r - robustos["taxa"]]),
+    fmt="o-", color=viz.AZUL, ecolor=viz.CINZA, elinewidth=1.5,
+    capsize=4, markersize=7, linewidth=2.2,
+)
+eixo.axvline(config.LIMIAR_RECLAMACOES - 0.5, color=viz.AZUL_PROFUNDO,
+             linestyle="--", linewidth=1.6)
+eixo.annotate(
+    f"degrau em {config.LIMIAR_RECLAMACOES} reclamações:\n28% → 58%",
+    xy=(config.LIMIAR_RECLAMACOES - 0.5, 0.42), xytext=(4.2, 0.24),
+    fontsize=9.5, color=viz.AZUL_PROFUNDO, fontweight="semibold",
+    arrowprops=dict(arrowstyle="->", color=viz.AZUL_PROFUNDO, linewidth=1.3),
+)
+
+eixo.set_xlabel("reclamações registradas")
+eixo.set_ylabel("taxa de recall")
+viz.rotular_percentual(eixo)
+viz.apenas_grade_horizontal(eixo)
+fig.tight_layout()
+plt.show()
+```
+
+## Linha {height="50%"}
+
+```{python}
+#| title: "Perfil descritivo por modelo"
+
+perfil.assign(
+    taxa_recall=(perfil["taxa_recall"] * 100).round(1).astype(str) + "%",
+    idade_media=perfil["idade_media"].round(1),
+    km_medio=perfil["km_medio"].round(0).astype(int),
+    km_mediano=perfil["km_mediano"].round(0).astype(int),
+    reclamacoes_media=perfil["reclamacoes_media"].round(2),
+).rename(columns={
+    "modelo": "Modelo",
+    "n_veiculos": "Veículos",
+    "n_recalls": "Recalls",
+    "taxa_recall": "Taxa",
+    "idade_media": "Idade média",
+    "km_medio": "Km médio",
+    "km_mediano": "Km mediano",
+    "reclamacoes_media": "Reclamações (média)",
+    "reclamacoes_max": "Reclamações (máx.)",
+})
+```
+
+# Qualidade dos dados
+
+## Linha {height="40%"}
+
+### Coluna {width="45%"}
+
+```{python}
+#| title: "Contrato de dados e limpeza aplicada"
+
+qualidade.rename(columns={
+    "verificacao": "Verificação", "valor": "Valor", "detalhe": "Detalhe",
+})
+```
+
+### Coluna {width="55%"}
+
+```{python}
+#| title: "Decisões de tratamento e sua justificativa"
+
+pd.DataFrame(
+    [
+        ("Duplicata (1 linha)", "Removida",
+         "Evita a mesma observação em treino e teste na validação cruzada."),
+        ("Outliers em reclamações (10)", "Mantidos",
+         "Cauda legítima de contagem; são os veículos de maior interesse."),
+        ("Valores ausentes", "Nenhuma ação", "Não há nulos em nenhuma coluna."),
+        ("Alvo Sim/Não", "Convertido para booleano",
+         "Evita comparação por string — inclusive contra 'Não' com til."),
+        ("Coerência km × idade", "Aprovada",
+         "Rodagem anual implícita 100% dentro da faixa plausível."),
+        ("Domínio de `modelo`", "Validado",
+         "9 níveis fixos, verificados pelo contrato pandera."),
+    ],
+    columns=["Achado", "Decisão", "Justificativa"],
+)
+```
+
+## Linha {height="60%"}
+
+### Coluna
+
+```{python}
+#| title: "Distribuição das variáveis, por desfecho"
+
+rotulado = features.assign(
+    alvo=transform.rotular_alvo(features[config.COLUNA_ALVO])
+)
+fig, eixos = plt.subplots(1, 3, figsize=(12.0, 3.6))
+
+for rotulo, sub in rotulado.groupby("alvo"):
+    eixos[0].hist(sub["km"], bins=22, alpha=0.8,
+                  color=viz.CORES_ALVO[rotulo], label=rotulo)
+eixos[0].set_title("Quilometragem")
+eixos[0].set_xlabel("km")
+eixos[0].set_ylabel("veículos")
+viz.rotular_milhares(eixos[0])
+eixos[0].legend(title="Recall")
+
+for eixo, coluna, titulo, unidade in (
+    (eixos[1], "idade_veiculo", "Idade do veículo", "anos"),
+    (eixos[2], "reclamacoes", "Reclamações", "ocorrências"),
+):
+    tabela = pd.crosstab(rotulado[coluna], rotulado["alvo"])
+    posicoes = np.arange(len(tabela))
+    largura = 0.42
+    for deslocamento, rotulo in zip((-largura / 2, largura / 2), tabela.columns):
+        eixo.bar(posicoes + deslocamento, tabela[rotulo], largura,
+                 color=viz.CORES_ALVO[rotulo], label=rotulo)
+    eixo.set_xticks(posicoes, tabela.index)
+    eixo.set_title(titulo)
+    eixo.set_xlabel(unidade)
+
+for eixo in eixos:
+    viz.apenas_grade_horizontal(eixo)
+fig.tight_layout()
+plt.show()
+```
+
+# Desempenho do modelo
+
+## Linha {height="20%"}
+
+```{python}
+#| content: valuebox
+#| title: "Modelo selecionado"
+dict(icon="cpu", color=viz.AZUL_PROFUNDO,
+     value=ROTULOS_MODELO[metadados["modelo"]])
+```
+
+```{python}
+#| content: valuebox
+#| title: "ROC AUC (validação cruzada 5×5)"
+dict(icon="activity", color=viz.AZUL,
+     value=f"{metadados['valor_metrica_selecao']:.3f}")
+```
+
+```{python}
+#| content: valuebox
+#| title: "Recall no limiar operacional"
+dict(
+    icon="check2-circle",
+    color=viz.AZUL,
+    value=f"{float(metricas_finais.query('metrica == \"recall\" and limiar != 0.5')['valor'].iloc[0]):.1%}",
+)
+```
+
+```{python}
+#| content: valuebox
+#| title: "Limiar de decisão (custo 3:1)"
+dict(icon="sliders", color=viz.AZUL_PROFUNDO,
+     value=f"{decisao['limiar_operacional']:.3f}")
+```
+
+## Linha {height="45%"}
+
+### Coluna {width="55%"}
+
+```{python}
+#| title: "Comparação das 12 combinações — todas se sobrepõem"
+
+ordenada = comparacao.sort_values("roc_auc").reset_index(drop=True)
+posicoes = np.arange(len(ordenada))
+erro = np.vstack([
+    ordenada["roc_auc"] - ordenada["roc_auc_ic_inferior"],
+    ordenada["roc_auc_ic_superior"] - ordenada["roc_auc"],
+])
+cores = [viz.CINZA if m == "baseline" else viz.AZUL for m in ordenada["modelo"]]
+
+melhor = comparacao[comparacao["modelo"] != "baseline"]["roc_auc"].max()
+erro_padrao = comparacao.loc[comparacao["roc_auc"].idxmax(), "roc_auc_desvio"] / np.sqrt(25)
+
+fig, eixo = plt.subplots(figsize=(7.6, 5.0))
+eixo.axvspan(melhor - erro_padrao, melhor, color=viz.AZUL, alpha=0.10,
+             label="1 erro padrão do melhor")
+eixo.errorbar(ordenada["roc_auc"], posicoes, xerr=erro, fmt="none",
+              ecolor=viz.TINTA_SUAVE, elinewidth=1.4, capsize=3)
+eixo.scatter(ordenada["roc_auc"], posicoes, color=cores, s=60, zorder=3)
+eixo.axvline(0.5, color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.4,
+             label="acaso")
+
+eixo.set_yticks(posicoes, [rotular(linha) for _, linha in ordenada.iterrows()])
+eixo.set_xlabel("ROC AUC")
+eixo.grid(axis="y", visible=False)
+eixo.legend(loc="lower right")
+fig.tight_layout()
+plt.show()
+```
+
+### Coluna {width="45%"}
+
+```{python}
+#| title: "Curva ROC e Precision-Recall"
+
+fig, (esq, dir) = plt.subplots(2, 1, figsize=(5.4, 5.2))
+
+esq.plot(roc["falso_positivo"], roc["verdadeiro_positivo"],
+         color=viz.AZUL, linewidth=2.2)
+esq.plot([0, 1], [0, 1], color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.3)
+esq.fill_between(roc["falso_positivo"], roc["verdadeiro_positivo"],
+                 roc["falso_positivo"], color=viz.AZUL, alpha=0.13)
+esq.set_title(f"ROC — AUC {metadados['valor_metrica_selecao']:.3f}")
+esq.set_xlabel("falso positivo")
+esq.set_ylabel("verdadeiro positivo")
+
+dir.plot(pr["revocacao"], pr["precisao"], color=viz.AZUL_PROFUNDO, linewidth=2.2)
+dir.axhline(taxa_base, color=viz.COR_REFERENCIA, linestyle=":", linewidth=1.3,
+            label=f"taxa base ({taxa_base:.0%})")
+dir.set_title("Precision-Recall")
+dir.set_xlabel("revocação")
+dir.set_ylabel("precisão")
+dir.legend(loc="lower left", fontsize=8)
+
+for eixo in (esq, dir):
+    eixo.set_xlim(0, 1)
+    eixo.set_ylim(0, 1.02)
+fig.tight_layout()
+plt.show()
+```
+
+## Linha {height="35%"}
+
+### Coluna {width="34%"}
+
+```{python}
+#| title: "As quatro métricas exigidas"
+
+metricas_finais.pivot(
+    index="metrica", columns="cenario", values="valor"
+).reindex(["accuracy", "precision", "recall", "f1"]).round(4)
+```
+
+::: {.nota-card}
+O limiar por custo **melhora o F1** além de elevar o Recall: 0,5 não era um
+ponto equilibrado, era um default ruim.
+:::
+
+### Coluna {width="33%"}
+
+```{python}
+#| title: "Sensibilidade ao custo"
+
+sensibilidade.assign(
+    razão=sensibilidade["razao_custo"].astype(int).astype(str) + ":1",
+    frota=(sensibilidade["taxa_sinalizacao"] * 100).round(0).astype(int).astype(str) + "%",
+    limiar=sensibilidade["limiar"].round(3),
+    Recall=sensibilidade["recall"].round(3),
+    Precision=sensibilidade["precision"].round(3),
+    F1=sensibilidade["f1"].round(3),
+    FN=sensibilidade["falsos_negativos"].round(1),
+)[["razão", "limiar", "Precision", "Recall", "F1", "FN", "frota"]]
+```
+
+::: {.nota-card}
+A âncora **3:1** é o último ponto antes da degeneração — de 5:1 em diante a
+recomendação vira "inspecionar quase tudo" e a Precision converge para a taxa
+base.
+:::
+
+### Coluna {width="33%"}
+
+```{python}
+#| title: "Calibração"
+
+fig, eixo = plt.subplots(figsize=(4.6, 4.0))
+eixo.plot([0, 1], [0, 1], color=viz.COR_REFERENCIA, linestyle="--",
+          linewidth=1.4, label="calibração perfeita")
+eixo.scatter(calib["probabilidade_media"], calib["frequencia_observada"],
+             s=calib["n"] * 2.0, color=viz.AZUL, alpha=0.8, zorder=3)
+
+pior = calib.loc[calib["desvio"].abs().idxmax()]
+eixo.scatter([pior["probabilidade_media"]], [pior["frequencia_observada"]],
+             s=pior["n"] * 2.0, facecolor="none", edgecolor=viz.AZUL_PROFUNDO,
+             linewidth=2.2, zorder=4)
+
+eixo.set_xlabel("probabilidade prevista")
+eixo.set_ylabel("frequência observada")
+eixo.set_xlim(0, 1)
+eixo.set_ylim(0, 1)
+eixo.legend(loc="lower right", fontsize=8)
+fig.tight_layout()
+plt.show()
+```
+
+::: {.nota-card}
+Erro absoluto médio **`{python} f"{decisao['erro_absoluto_medio_calibracao']:.3f}"`**.
+A faixa destacada prevê `{python} f"{pior['probabilidade_media']:.0%}"` e observa
+`{python} f"{pior['frequencia_observada']:.0%}"` — ponto fraco declarado.
+:::
+
+# Interpretação
+
+## Linha {height="48%"}
+
+### Coluna {width="58%"}
+
+```{python}
+#| title: "Importância das variáveis — a forma de medir inverte a conclusão"
+
+fig, (esq, dir) = plt.subplots(1, 2, figsize=(8.4, 3.8))
+
+for eixo, tabela, titulo in (
+    (esq, imp_individual, "Uma variável por vez"),
+    (dir, imp_grupos, "Colineares em bloco"),
+):
+    ordem = tabela.sort_values("queda_auc")
+    posicoes = np.arange(len(ordem))
+    erro = np.vstack([
+        ordem["queda_auc"] - ordem["ic_inferior"],
+        ordem["ic_superior"] - ordem["queda_auc"],
+    ])
+    cores = [viz.AZUL_PROFUNDO if n > 1 else viz.AZUL for n in ordem["n_variaveis"]]
+
+    eixo.barh(posicoes, ordem["queda_auc"], color=cores, height=0.55)
+    eixo.errorbar(ordem["queda_auc"], posicoes, xerr=erro, fmt="none",
+                  ecolor=viz.TINTA_SUAVE, elinewidth=1.3, capsize=3)
+    eixo.set_yticks(posicoes, [g.replace("_", " ") for g in ordem["grupo"]])
+    eixo.set_xlabel("queda de ROC AUC")
+    eixo.set_title(titulo)
+    eixo.set_xlim(0, 0.175)
+    eixo.grid(axis="y", visible=False)
+
+soma = imp_individual.set_index("grupo").loc[["idade_veiculo", "km"], "queda_auc"].sum()
+bloco = imp_grupos.set_index("grupo").loc["tempo_e_uso", "queda_auc"]
+dir.annotate(f"{bloco / soma:.2f}× a soma das partes",
+             xy=(0.5, 0.12), xycoords="axes fraction", fontsize=9.5,
+             color=viz.AZUL_PROFUNDO, fontweight="semibold")
+
+fig.tight_layout()
+plt.show()
+```
+
+::: {.nota-card}
+Com `corr(idade, km) = 0,947`, permutar uma variável de cada vez **subestima as
+duas** — a outra cobre a ausência. A leitura individual, que é a saída padrão de
+qualquer biblioteca, está errada neste dataset.
+:::
+
+### Coluna {width="42%"}
+
+```{python}
+#| title: "Efeito de cada variável, em razão de chances"
+
+coeficientes.assign(
+    Variável=coeficientes["variavel"],
+    **{"Razão de chances": coeficientes["razao_chances_comunicavel"].round(3)},
+    Unidade=coeficientes["unidade"],
+    **{"Coef. padronizado": coeficientes["coeficiente_padronizado"].round(3)},
+)[["Variável", "Razão de chances", "Unidade", "Coef. padronizado"]]
+```
+
+::: {.nota-card}
+**Não ler idade e km isoladamente.** Sob colinearidade de 0,947 a repartição do
+efeito entre as duas depende da amostra, não do fenômeno. A leitura confiável é
+a do bloco `tempo_e_uso`.
+:::
+
+## Linha {height="52%"}
+
+```{python}
+#| title: "Risco previsto em função de cada variável"
+
+variaveis = list(metadados["colunas"])
+titulos = {
+    "idade_veiculo": ("Idade do veículo", "anos"),
+    "km": ("Quilometragem", "km"),
+    "reclamacoes": ("Reclamações", "ocorrências"),
+}
+
+fig, eixos = plt.subplots(1, len(variaveis), figsize=(12.0, 3.5))
+for eixo, variavel in zip(eixos, variaveis):
+    curva = dependencia[dependencia["variavel"] == variavel]
+    titulo, unidade = titulos[variavel]
+
+    eixo.plot(curva["valor"], curva["risco_previsto"],
+              color=viz.AZUL, linewidth=2.4)
+    eixo.fill_between(curva["valor"], 0, curva["risco_previsto"],
+                      color=viz.AZUL, alpha=0.10)
+    eixo.axhline(decisao["limiar_operacional"], color=viz.AZUL_PROFUNDO,
+                 linestyle="--", linewidth=1.5,
+                 label=f"limiar {decisao['limiar_operacional']:.3f}")
+    eixo.set_title(titulo)
+    eixo.set_xlabel(unidade)
+    eixo.set_ylim(0, 1)
+    viz.rotular_percentual(eixo)
+    viz.apenas_grade_horizontal(eixo)
+
+eixos[0].set_ylabel("risco previsto")
+viz.rotular_milhares(eixos[1])
+eixos[-1].legend(fontsize=8, loc="lower right")
+fig.tight_layout()
+plt.show()
+```
+
+::: {.nota-card}
+A dependência parcial avalia combinações que quase não ocorrem na frota — um
+veículo de 8 anos com 10 mil km, por exemplo. A leitura vale na região densa dos
+dados, não nas pontas.
+:::

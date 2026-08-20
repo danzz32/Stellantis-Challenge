@@ -1984,6 +1984,7 @@ dependencies = [
     { name = "scipy" },
     { name = "shap" },
     { name = "streamlit" },
+    { name = "streamlit-shadcn-ui" },
     { name = "tabulate" },
     { name = "xgboost" },
 ]
@@ -2010,6 +2011,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.14" },
     { name = "shap", specifier = ">=0.52.0" },
     { name = "streamlit", specifier = ">=1.62.0" },
+    { name = "streamlit-shadcn-ui", specifier = ">=1.1.0" },
     { name = "tabulate", specifier = ">=0.9" },
     { name = "xgboost", specifier = ">=3.4.1" },
 ]
@@ -2053,6 +2055,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/50/94/928c44a8b7bcd602fc4a16025e9868bcdb88b92bcdb2e53dec188d034fc4/streamlit-1.62.0.tar.gz", hash = "sha256:9d2571da6e6799cbaf0f59548f5773926260a87a69807cf3e2f0f68f9f5e4d45", size = 9883501, upload-time = "2026-08-19T18:31:22.864Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2b/57/78864764c53885db8a378cc1c47329b4b6e095f7ebd89cd1ffcca4027c89/streamlit-1.62.0-py3-none-any.whl", hash = "sha256:294dbcfe0d6531b0d8593a095e6872dcc6ec4b731723fbb318a0f8102e69162e", size = 10490146, upload-time = "2026-08-19T18:31:19.957Z" },
+]
+
+[[package]]
+name = "streamlit-shadcn-ui"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e2/ff/fbf4b7efd8f43302477bd0573cf3e8675dd0016874508c5502a78ea8e16e/streamlit_shadcn_ui-1.1.0.tar.gz", hash = "sha256:dab11e8c36eb238e1977c5a667bf122b0233c6f978db14b873740295eae6d88f", size = 282634, upload-time = "2026-08-09T15:12:16.184Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/c4/fcbcf584267c131425fe1dda54c4c81c8fe34d83a1a637da1921efc72ae8/streamlit_shadcn_ui-1.1.0-py3-none-any.whl", hash = "sha256:8df084b899cbb433565f9bb4a4b7611e0a8bab4e4fa4786a9520829a7e2884f7", size = 301744, upload-time = "2026-08-09T15:12:14.581Z" },
 ]
 
 [[package]]

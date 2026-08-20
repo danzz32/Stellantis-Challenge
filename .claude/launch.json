@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "painel-recall",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "streamlit", "run", "app/streamlit_app.py"],
+      "port": 8501
+    }
+  ]
+}

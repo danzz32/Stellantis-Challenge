@@ -30,9 +30,16 @@ uv run recall-ingest
 cd qmd && uv run quarto render
 ```
 
+Para abrir o painel interativo:
+
+```bash
+uv run streamlit run app/streamlit_app.py
+```
+
 O primeiro comando reconstrói o ambiente a partir do `uv.lock` — mesma versão de
 cada pacote, em qualquer máquina. O segundo valida o contrato de dados e reporta
-o resultado. O terceiro renderiza os documentos para `reports/`.
+o resultado. O terceiro renderiza os documentos para `reports/`. O quarto sobe o
+painel em `http://localhost:8501`.
 
 ---
 
@@ -156,7 +163,14 @@ importam de `src/` e narram o resultado. Assim cada número do relatório tem um
 |---|---|
 | Notebook com análise e modelo | `reports/01-analise.html` (fonte: `qmd/01-analise.qmd`) |
 | PDF executivo, máx. 3 páginas | `reports/02-executivo.pdf` |
-| Dashboard | `reports/dashboard.html` · `app/streamlit_app.py` |
+| Dashboard | `reports/dashboard.html` (estático) · `app/streamlit_app.py` (interativo) |
+
+O painel Quarto e o Streamlit cobrem as mesmas cinco visões e leem os mesmos
+arquivos Parquet. O estático é o entregável — abre sem servidor. O interativo
+acrescenta o que um documento não pode fazer: **planejador de capacidade de
+inspeção**, **simulador de razão de custo** (que recalcula limiar e métricas ao
+vivo sobre as predições fora da amostra) e **score de veículo individual** com
+a decomposição exata da predição.
 
 ---
 
@@ -165,9 +179,11 @@ importam de `src/` e narram o resultado. Assim cada número do relatório tem um
 - [x] **Parte 1 — Análise exploratória:** contrato de ingestão, avaliação de
       qualidade, descritivas, correlações, VIF, teste de associação e taxas com
       intervalo de confiança.
-- [ ] **Parte 2 — Modelo preditivo:** baseline, Regressão Logística regularizada,
+- [x] **Parte 2 — Modelo preditivo:** baseline, Regressão Logística regularizada,
       Random Forest e XGBoost, com justificativa da escolha.
-- [ ] **Parte 3 — Avaliação:** Accuracy, Precision, Recall e F1 por validação
+- [x] **Parte 3 — Avaliação:** Accuracy, Precision, Recall e F1 por validação
       cruzada estratificada repetida, com intervalo de confiança.
-- [ ] **Parte 4 — Interpretação:** importância por permutação, SHAP, limitações.
-- [ ] **Parte 5 — Dashboard executivo** e PDF de três páginas.
+- [x] **Parte 4 — Interpretação:** importância por permutação, SHAP, limitações.
+- [x] **Parte 5 — Dashboard executivo:** painel Quarto com cinco visões
+      (três de auditoria de qualidade, duas técnicas), painel Streamlit
+      interativo e PDF executivo de três páginas.
