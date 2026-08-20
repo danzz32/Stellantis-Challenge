@@ -55,10 +55,13 @@ def conectar(
     con = duckdb.connect(":memory:")
     con.register(f"_{tabela}_origem", df)
 
-    if pd.api.types.is_bool_dtype(df[config.COLUNA_ALVO]):
-        expressao_alvo = config.COLUNA_ALVO
-    else:
-        expressao_alvo = f"{config.COLUNA_ALVO} = $rotulo_positivo"
+    ja_booleano = pd.api.types.is_bool_dtype(df[config.COLUNA_ALVO])
+    expressao_alvo = (
+        config.COLUNA_ALVO if ja_booleano else f"{config.COLUNA_ALVO} = $rotulo_positivo"
+    )
+    # O DuckDB rejeita parametros nao referenciados pela consulta, entao o
+    # dicionario acompanha a expressao efetivamente montada.
+    parametros = {} if ja_booleano else {"rotulo_positivo": config.ROTULO_POSITIVO}
 
     con.execute(
         f"""
@@ -67,7 +70,7 @@ def conectar(
                {expressao_alvo} as {config.COLUNA_ALVO}
         from _{tabela}_origem
         """,
-        {"rotulo_positivo": config.ROTULO_POSITIVO},
+        parametros,
     )
     return con
 
@@ -83,11 +86,10 @@ def conectar_parquet(
     arquivo colunar sem materializar o dado em memoria antes de agregar.
     """
     con = duckdb.connect(":memory:")
-    con.execute(
-        f"create or replace view {tabela} as "
-        f"select * from read_parquet($caminho)",
-        {"caminho": str(caminho)},
-    )
+    # A view e criada pela API de relacao, e nao por `create view ... as select
+    # from read_parquet('<caminho>')`: o DuckDB nao aceita parametro preparado em
+    # DDL, e interpolar o caminho na string SQL abriria a porta para injecao.
+    con.read_parquet(str(caminho)).create_view(tabela, replace=True)
     return con
 
 
@@ -263,8 +265,17 @@ def distribuicao_alvo(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def alvo_binario(df: pd.DataFrame) -> pd.Series:
-    """Alvo como 0/1, sem materializar a coluna no dado de origem."""
-    return df[config.COLUNA_ALVO].eq(config.ROTULO_POSITIVO).astype("int8")
+    """Alvo como 0/1, sem materializar a coluna no dado de origem.
+
+    Aceita as duas codificacoes -- texto ('Sim'/'Nao') na origem e booleano na
+    camada trusted -- porque as funcoes deste modulo rodam sobre ambas. Uma
+    comparacao fixa contra 'Sim' devolveria zero para toda a camada trusted, e o
+    erro nao apareceria: as taxas simplesmente zerariam.
+    """
+    alvo = df[config.COLUNA_ALVO]
+    if pd.api.types.is_bool_dtype(alvo):
+        return alvo.astype("int8")
+    return alvo.eq(config.ROTULO_POSITIVO).astype("int8")
 
 
 def matriz_correlacao(

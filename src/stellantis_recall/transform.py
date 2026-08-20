@@ -44,7 +44,13 @@ def binarizar_alvo(serie: pd.Series) -> pd.Series:
     'Sim'/'Nao' e codificacao de apresentacao. Mante-la ate a modelagem
     obrigaria comparacoes por string em todo o projeto -- inclusive contra
     "Nao" com til, que e a fonte classica de bug silencioso por codificacao.
+
+    Uma serie ja booleana passa adiante inalterada. Sem isso, `tipar` deixaria
+    de ser idempotente e reprocessar a camada trusted quebraria.
     """
+    if pd.api.types.is_bool_dtype(serie):
+        return serie
+
     invalidos = set(serie.dropna().unique()) - set(config.ROTULOS_ALVO)
     if invalidos:
         raise ValueError(

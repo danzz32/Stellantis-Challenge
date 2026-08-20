@@ -526,9 +526,32 @@ pd.DataFrame(
    interpretação, não para saneamento.
 2. **Há sinal real, moderado e distribuído.** Três preditoras com $r \approx
    0{,}45$–$0{,}48$ e nenhuma dominante. O problema não é trivial nem
-   determinístico: dada a sobreposição das distribuições, o teto realista de
-   acurácia está na faixa de **78% a 84%**, contra um piso de 52,2% do
-   classificador trivial.
+   determinístico, e a sobreposição visível nas distribuições impõe um erro
+   irredutível substancial: nenhuma combinação de variáveis separa as duas
+   classes na faixa central.
+
+   ::: {.callout-note collapse="true"}
+   ## Confronto com o resultado medido na Parte 2
+
+   A primeira versão desta seção estimava um teto de acurácia entre 78% e 84%,
+   extrapolado das correlações marginais. **A medição desmentiu a estimativa.**
+   Sob validação cruzada estratificada repetida (5×5), a melhor acurácia obtida
+   entre todas as combinações de modelo e atributos foi de **70,5%**, e o modelo
+   selecionado alcança **69,1%** (IC 95%: 67,2%–70,9%) — contra o piso de 52,1%
+   do classificador trivial.
+
+   O erro da estimativa original tem causa identificável: correlação marginal
+   mede associação linear de cada variável isoladamente, e somá-las
+   mentalmente ignora que as três são fortemente correlacionadas entre si. Com
+   $\text{corr}(\text{idade}, \text{km}) = 0{,}947$, elas carregam em boa
+   medida a *mesma* informação, e o poder preditivo conjunto fica muito abaixo
+   da soma das partes.
+
+   O registro fica no relatório em vez de ser apagado: a estimativa era uma
+   inferência razoável a partir do que a Parte 1 tinha em mãos, e a diferença
+   entre ela e o valor medido é, ela própria, um resultado sobre a estrutura
+   dos dados.
+   :::
 3. **A colinearidade de 0,947 é a principal restrição técnica** e precisa ser
    endereçada explicitamente na escolha e na interpretação do modelo.
 4. **`modelo` não é preditor útil** — e essa conclusão negativa é um resultado,

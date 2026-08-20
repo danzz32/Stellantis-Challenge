@@ -2416,7 +2416,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Data de Publicação</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">19/08/2026</p>
+      <p class="date">20/08/2026</p>
     </div>
   </div>
   
@@ -3321,7 +3321,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>1</td>
 <td>Toro</td>
 <td>54</td>
-<td>31.0</td>
+<td>31</td>
 <td>57.4%</td>
 <td>44.2%</td>
 <td>69.7%</td>
@@ -3331,7 +3331,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>2</td>
 <td>Cronos</td>
 <td>51</td>
-<td>27.0</td>
+<td>27</td>
 <td>52.9%</td>
 <td>39.5%</td>
 <td>65.9%</td>
@@ -3341,7 +3341,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>3</td>
 <td>Strada</td>
 <td>63</td>
-<td>33.0</td>
+<td>33</td>
 <td>52.4%</td>
 <td>40.3%</td>
 <td>64.2%</td>
@@ -3351,7 +3351,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>4</td>
 <td>Commander</td>
 <td>66</td>
-<td>32.0</td>
+<td>32</td>
 <td>48.5%</td>
 <td>36.8%</td>
 <td>60.3%</td>
@@ -3361,7 +3361,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>5</td>
 <td>Argo</td>
 <td>54</td>
-<td>26.0</td>
+<td>26</td>
 <td>48.1%</td>
 <td>35.4%</td>
 <td>61.1%</td>
@@ -3371,7 +3371,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>6</td>
 <td>Compass</td>
 <td>53</td>
-<td>25.0</td>
+<td>25</td>
 <td>47.2%</td>
 <td>34.4%</td>
 <td>60.3%</td>
@@ -3381,7 +3381,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>7</td>
 <td>Renegade</td>
 <td>52</td>
-<td>23.0</td>
+<td>23</td>
 <td>44.2%</td>
 <td>31.6%</td>
 <td>57.7%</td>
@@ -3391,7 +3391,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>8</td>
 <td>Pulse</td>
 <td>48</td>
-<td>20.0</td>
+<td>20</td>
 <td>41.7%</td>
 <td>28.8%</td>
 <td>55.7%</td>
@@ -3401,7 +3401,7 @@ Tabela 10: Teste qui-quadrado de independência entre modelo e recall.
 <td>9</td>
 <td>Fastback</td>
 <td>59</td>
-<td>22.0</td>
+<td>22</td>
 <td>37.3%</td>
 <td>26.1%</td>
 <td>50.0%</td>
@@ -3625,12 +3625,30 @@ Tabela 11: Decisões de tratamento derivadas desta análise.
 <section id="o-que-a-parte-1-estabelece-para-a-modelagem" class="level3">
 <h3 class="anchored" data-anchor-id="o-que-a-parte-1-estabelece-para-a-modelagem">O que a Parte 1 estabelece para a modelagem</h3>
 <ol type="1">
-<li><strong>O dado é estruturalmente limpo.</strong> Sem nulos, sem inconsistências entre colunas, uma única duplicata. O esforço da entrega deve ir para validação e interpretação, não para saneamento.</li>
-<li><strong>Há sinal real, moderado e distribuído.</strong> Três preditoras com <span class="math inline">\(r \approx
-0{,}45\)</span>–<span class="math inline">\(0{,}48\)</span> e nenhuma dominante. O problema não é trivial nem determinístico: dada a sobreposição das distribuições, o teto realista de acurácia está na faixa de <strong>78% a 84%</strong>, contra um piso de 52,2% do classificador trivial.</li>
-<li><strong>A colinearidade de 0,947 é a principal restrição técnica</strong> e precisa ser endereçada explicitamente na escolha e na interpretação do modelo.</li>
-<li><strong><code>modelo</code> não é preditor útil</strong> — e essa conclusão negativa é um resultado, não uma lacuna. Ela redireciona a recomendação executiva de “qual modelo inspecionar” para “qual perfil de uso inspecionar”.</li>
-<li><strong>Com classes balanceadas</strong>, as quatro métricas pedidas são aplicáveis sem ressalva, e o ponto de corte deve ser definido por custo de negócio — não pelo limiar implícito de 0,5.</li>
+<li><p><strong>O dado é estruturalmente limpo.</strong> Sem nulos, sem inconsistências entre colunas, uma única duplicata. O esforço da entrega deve ir para validação e interpretação, não para saneamento.</p></li>
+<li><p><strong>Há sinal real, moderado e distribuído.</strong> Três preditoras com <span class="math inline">\(r \approx
+0{,}45\)</span>–<span class="math inline">\(0{,}48\)</span> e nenhuma dominante. O problema não é trivial nem determinístico, e a sobreposição visível nas distribuições impõe um erro irredutível substancial: nenhuma combinação de variáveis separa as duas classes na faixa central.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Nota</span>Confronto com o resultado medido na Parte 2
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<p>A primeira versão desta seção estimava um teto de acurácia entre 78% e 84%, extrapolado das correlações marginais. <strong>A medição desmentiu a estimativa.</strong> Sob validação cruzada estratificada repetida (5×5), a melhor acurácia obtida entre todas as combinações de modelo e atributos foi de <strong>70,5%</strong>, e o modelo selecionado alcança <strong>69,1%</strong> (IC 95%: 67,2%–70,9%) — contra o piso de 52,1% do classificador trivial.</p>
+<p>O erro da estimativa original tem causa identificável: correlação marginal mede associação linear de cada variável isoladamente, e somá-las mentalmente ignora que as três são fortemente correlacionadas entre si. Com <span class="math inline">\(\text{corr}(\text{idade}, \text{km}) = 0{,}947\)</span>, elas carregam em boa medida a <em>mesma</em> informação, e o poder preditivo conjunto fica muito abaixo da soma das partes.</p>
+<p>O registro fica no relatório em vez de ser apagado: a estimativa era uma inferência razoável a partir do que a Parte 1 tinha em mãos, e a diferença entre ela e o valor medido é, ela própria, um resultado sobre a estrutura dos dados.</p>
+</div>
+</div>
+</div></li>
+<li><p><strong>A colinearidade de 0,947 é a principal restrição técnica</strong> e precisa ser endereçada explicitamente na escolha e na interpretação do modelo.</p></li>
+<li><p><strong><code>modelo</code> não é preditor útil</strong> — e essa conclusão negativa é um resultado, não uma lacuna. Ela redireciona a recomendação executiva de “qual modelo inspecionar” para “qual perfil de uso inspecionar”.</p></li>
+<li><p><strong>Com classes balanceadas</strong>, as quatro métricas pedidas são aplicáveis sem ressalva, e o ponto de corte deve ser definido por custo de negócio — não pelo limiar implícito de 0,5.</p></li>
 </ol>
 <div class="limitacao">
 <p><strong>Limitação transversal.</strong> Os dados são sintéticos e, como mostram a curtose negativa de <code>idade</code> e <code>km</code> e a coerência perfeita entre as duas colunas, foram gerados por regras simples. Um modelo ajustado aqui mede a capacidade de recuperar essas regras, não a de prever recalls reais. As quatro preditoras disponíveis também omitem dimensões que dominariam o problema real: fornecedor de componente, planta e lote de produção, tipo e severidade da falha, e a data da ocorrência. Isso está detalhado na Parte 4.</p>
@@ -4621,27 +4639,50 @@ Tabela 11: Decisões de tratamento derivadas desta análise.
 <span id="cb18-558"><a href="#cb18-558" aria-hidden="true" tabindex="-1"></a>   interpretação, não para saneamento.</span>
 <span id="cb18-559"><a href="#cb18-559" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>**Há sinal real, moderado e distribuído.** Três preditoras com $r \approx</span>
 <span id="cb18-560"><a href="#cb18-560" aria-hidden="true" tabindex="-1"></a>   0{,}45$–$0{,}48$ e nenhuma dominante. O problema não é trivial nem</span>
-<span id="cb18-561"><a href="#cb18-561" aria-hidden="true" tabindex="-1"></a>   determinístico: dada a sobreposição das distribuições, o teto realista de</span>
-<span id="cb18-562"><a href="#cb18-562" aria-hidden="true" tabindex="-1"></a>   acurácia está na faixa de **78% a 84%**, contra um piso de 52,2% do</span>
-<span id="cb18-563"><a href="#cb18-563" aria-hidden="true" tabindex="-1"></a>   classificador trivial.</span>
-<span id="cb18-564"><a href="#cb18-564" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>**A colinearidade de 0,947 é a principal restrição técnica** e precisa ser</span>
-<span id="cb18-565"><a href="#cb18-565" aria-hidden="true" tabindex="-1"></a>   endereçada explicitamente na escolha e na interpretação do modelo.</span>
-<span id="cb18-566"><a href="#cb18-566" aria-hidden="true" tabindex="-1"></a><span class="ss">4. </span>**`modelo` não é preditor útil** — e essa conclusão negativa é um resultado,</span>
-<span id="cb18-567"><a href="#cb18-567" aria-hidden="true" tabindex="-1"></a>   não uma lacuna. Ela redireciona a recomendação executiva de &quot;qual modelo</span>
-<span id="cb18-568"><a href="#cb18-568" aria-hidden="true" tabindex="-1"></a>   inspecionar&quot; para &quot;qual perfil de uso inspecionar&quot;.</span>
-<span id="cb18-569"><a href="#cb18-569" aria-hidden="true" tabindex="-1"></a><span class="ss">5. </span>**Com classes balanceadas**, as quatro métricas pedidas são aplicáveis sem</span>
-<span id="cb18-570"><a href="#cb18-570" aria-hidden="true" tabindex="-1"></a>   ressalva, e o ponto de corte deve ser definido por custo de negócio — não</span>
-<span id="cb18-571"><a href="#cb18-571" aria-hidden="true" tabindex="-1"></a>   pelo limiar implícito de 0,5.</span>
-<span id="cb18-572"><a href="#cb18-572" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-573"><a href="#cb18-573" aria-hidden="true" tabindex="-1"></a>::: {.limitacao}</span>
-<span id="cb18-574"><a href="#cb18-574" aria-hidden="true" tabindex="-1"></a>**Limitação transversal.** Os dados são sintéticos e, como mostram a curtose</span>
-<span id="cb18-575"><a href="#cb18-575" aria-hidden="true" tabindex="-1"></a>negativa de <span class="in">`idade`</span> e <span class="in">`km`</span> e a coerência perfeita entre as duas colunas, foram</span>
-<span id="cb18-576"><a href="#cb18-576" aria-hidden="true" tabindex="-1"></a>gerados por regras simples. Um modelo ajustado aqui mede a capacidade de</span>
-<span id="cb18-577"><a href="#cb18-577" aria-hidden="true" tabindex="-1"></a>recuperar essas regras, não a de prever recalls reais. As quatro preditoras</span>
-<span id="cb18-578"><a href="#cb18-578" aria-hidden="true" tabindex="-1"></a>disponíveis também omitem dimensões que dominariam o problema real: fornecedor</span>
-<span id="cb18-579"><a href="#cb18-579" aria-hidden="true" tabindex="-1"></a>de componente, planta e lote de produção, tipo e severidade da falha, e a data</span>
-<span id="cb18-580"><a href="#cb18-580" aria-hidden="true" tabindex="-1"></a>da ocorrência. Isso está detalhado na Parte 4.</span>
-<span id="cb18-581"><a href="#cb18-581" aria-hidden="true" tabindex="-1"></a>:::</span>
+<span id="cb18-561"><a href="#cb18-561" aria-hidden="true" tabindex="-1"></a>   determinístico, e a sobreposição visível nas distribuições impõe um erro</span>
+<span id="cb18-562"><a href="#cb18-562" aria-hidden="true" tabindex="-1"></a>   irredutível substancial: nenhuma combinação de variáveis separa as duas</span>
+<span id="cb18-563"><a href="#cb18-563" aria-hidden="true" tabindex="-1"></a>   classes na faixa central.</span>
+<span id="cb18-564"><a href="#cb18-564" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-565"><a href="#cb18-565" aria-hidden="true" tabindex="-1"></a>   ::: {.callout-note collapse=&quot;true&quot;}</span>
+<span id="cb18-566"><a href="#cb18-566" aria-hidden="true" tabindex="-1"></a>   ## Confronto com o resultado medido na Parte 2</span>
+<span id="cb18-567"><a href="#cb18-567" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-568"><a href="#cb18-568" aria-hidden="true" tabindex="-1"></a>   A primeira versão desta seção estimava um teto de acurácia entre 78% e 84%,</span>
+<span id="cb18-569"><a href="#cb18-569" aria-hidden="true" tabindex="-1"></a>   extrapolado das correlações marginais. **A medição desmentiu a estimativa.**</span>
+<span id="cb18-570"><a href="#cb18-570" aria-hidden="true" tabindex="-1"></a>   Sob validação cruzada estratificada repetida (5×5), a melhor acurácia obtida</span>
+<span id="cb18-571"><a href="#cb18-571" aria-hidden="true" tabindex="-1"></a>   entre todas as combinações de modelo e atributos foi de **70,5%**, e o modelo</span>
+<span id="cb18-572"><a href="#cb18-572" aria-hidden="true" tabindex="-1"></a>   selecionado alcança **69,1%** (IC 95%: 67,2%–70,9%) — contra o piso de 52,1%</span>
+<span id="cb18-573"><a href="#cb18-573" aria-hidden="true" tabindex="-1"></a>   do classificador trivial.</span>
+<span id="cb18-574"><a href="#cb18-574" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-575"><a href="#cb18-575" aria-hidden="true" tabindex="-1"></a>   O erro da estimativa original tem causa identificável: correlação marginal</span>
+<span id="cb18-576"><a href="#cb18-576" aria-hidden="true" tabindex="-1"></a>   mede associação linear de cada variável isoladamente, e somá-las</span>
+<span id="cb18-577"><a href="#cb18-577" aria-hidden="true" tabindex="-1"></a>   mentalmente ignora que as três são fortemente correlacionadas entre si. Com</span>
+<span id="cb18-578"><a href="#cb18-578" aria-hidden="true" tabindex="-1"></a>   $\text{corr}(\text{idade}, \text{km}) = 0{,}947$, elas carregam em boa</span>
+<span id="cb18-579"><a href="#cb18-579" aria-hidden="true" tabindex="-1"></a>   medida a *mesma* informação, e o poder preditivo conjunto fica muito abaixo</span>
+<span id="cb18-580"><a href="#cb18-580" aria-hidden="true" tabindex="-1"></a>   da soma das partes.</span>
+<span id="cb18-581"><a href="#cb18-581" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-582"><a href="#cb18-582" aria-hidden="true" tabindex="-1"></a>   O registro fica no relatório em vez de ser apagado: a estimativa era uma</span>
+<span id="cb18-583"><a href="#cb18-583" aria-hidden="true" tabindex="-1"></a>   inferência razoável a partir do que a Parte 1 tinha em mãos, e a diferença</span>
+<span id="cb18-584"><a href="#cb18-584" aria-hidden="true" tabindex="-1"></a>   entre ela e o valor medido é, ela própria, um resultado sobre a estrutura</span>
+<span id="cb18-585"><a href="#cb18-585" aria-hidden="true" tabindex="-1"></a>   dos dados.</span>
+<span id="cb18-586"><a href="#cb18-586" aria-hidden="true" tabindex="-1"></a>   :::</span>
+<span id="cb18-587"><a href="#cb18-587" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>**A colinearidade de 0,947 é a principal restrição técnica** e precisa ser</span>
+<span id="cb18-588"><a href="#cb18-588" aria-hidden="true" tabindex="-1"></a>   endereçada explicitamente na escolha e na interpretação do modelo.</span>
+<span id="cb18-589"><a href="#cb18-589" aria-hidden="true" tabindex="-1"></a><span class="ss">4. </span>**`modelo` não é preditor útil** — e essa conclusão negativa é um resultado,</span>
+<span id="cb18-590"><a href="#cb18-590" aria-hidden="true" tabindex="-1"></a>   não uma lacuna. Ela redireciona a recomendação executiva de &quot;qual modelo</span>
+<span id="cb18-591"><a href="#cb18-591" aria-hidden="true" tabindex="-1"></a>   inspecionar&quot; para &quot;qual perfil de uso inspecionar&quot;.</span>
+<span id="cb18-592"><a href="#cb18-592" aria-hidden="true" tabindex="-1"></a><span class="ss">5. </span>**Com classes balanceadas**, as quatro métricas pedidas são aplicáveis sem</span>
+<span id="cb18-593"><a href="#cb18-593" aria-hidden="true" tabindex="-1"></a>   ressalva, e o ponto de corte deve ser definido por custo de negócio — não</span>
+<span id="cb18-594"><a href="#cb18-594" aria-hidden="true" tabindex="-1"></a>   pelo limiar implícito de 0,5.</span>
+<span id="cb18-595"><a href="#cb18-595" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-596"><a href="#cb18-596" aria-hidden="true" tabindex="-1"></a>::: {.limitacao}</span>
+<span id="cb18-597"><a href="#cb18-597" aria-hidden="true" tabindex="-1"></a>**Limitação transversal.** Os dados são sintéticos e, como mostram a curtose</span>
+<span id="cb18-598"><a href="#cb18-598" aria-hidden="true" tabindex="-1"></a>negativa de <span class="in">`idade`</span> e <span class="in">`km`</span> e a coerência perfeita entre as duas colunas, foram</span>
+<span id="cb18-599"><a href="#cb18-599" aria-hidden="true" tabindex="-1"></a>gerados por regras simples. Um modelo ajustado aqui mede a capacidade de</span>
+<span id="cb18-600"><a href="#cb18-600" aria-hidden="true" tabindex="-1"></a>recuperar essas regras, não a de prever recalls reais. As quatro preditoras</span>
+<span id="cb18-601"><a href="#cb18-601" aria-hidden="true" tabindex="-1"></a>disponíveis também omitem dimensões que dominariam o problema real: fornecedor</span>
+<span id="cb18-602"><a href="#cb18-602" aria-hidden="true" tabindex="-1"></a>de componente, planta e lote de produção, tipo e severidade da falha, e a data</span>
+<span id="cb18-603"><a href="#cb18-603" aria-hidden="true" tabindex="-1"></a>da ocorrência. Isso está detalhado na Parte 4.</span>
+<span id="cb18-604"><a href="#cb18-604" aria-hidden="true" tabindex="-1"></a>:::</span>
 </code></pre></div><button title="Copiar para a área de transferência" class="code-copy-button" data-in-quarto-modal><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->

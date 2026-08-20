@@ -77,7 +77,7 @@ DERIVADAS_CATEGORICAS: tuple[str, ...] = ("faixa_idade", "faixa_km")
 
 
 def _idade_ajustada(df: pd.DataFrame) -> pd.Series:
-    """Idade com meio ano somado; ver `config.OFFSET_IDADE`."""
+    """Idade somada ao offset calibrado; ver a justificativa em `config`."""
     return df["idade_veiculo"] + config.OFFSET_IDADE
 
 
@@ -88,6 +88,14 @@ def km_por_ano(df: pd.DataFrame) -> pd.Series:
     confundidos (correlacao de 0,947). Dois veiculos de 4 anos com 40 mil e 120
     mil km tem desgaste muito diferente, e essa distincao desaparece se o modelo
     so enxerga idade e quilometragem acumulada.
+
+    A separacao efetivamente acontece: com o offset calibrado, a correlacao
+    residual com `idade_veiculo` cai para -0,107. Um efeito colateral a
+    registrar -- e a reportar na Parte 4 -- e que a correlacao desta variavel
+    com o alvo cai para -0,02. Lida isoladamente, a intensidade de uso nao
+    prediz recall nesta base; todo o sinal esta no tempo de vida, na
+    quilometragem acumulada e nas reclamacoes. E um resultado negativo
+    legitimo, e torna esta feature candidata a poda.
     """
     return df["km"] / _idade_ajustada(df)
 
@@ -106,6 +114,13 @@ def reclamacoes_por_10k_km(df: pd.DataFrame) -> pd.Series:
 
     Normaliza pelo uso, e nao pelo tempo. E a leitura mais proxima de "taxa de
     falha por exposicao" que as quatro colunas disponiveis permitem construir.
+
+    Cauda pesada por construcao: o denominador chega a 0,1 nos veiculos de menor
+    quilometragem, o que empurra a assimetria para cerca de 11. Modelos de
+    arvore sao indiferentes a isso, por operarem sobre ordenacao; a Regressao
+    Logistica nao e. A compressao de escala apropriada (log1p, quantile) fica no
+    `Pipeline` do scikit-learn, junto do modelo que precisa dela, e nao aqui --
+    aplicada no mart, ela seria imposta tambem aos modelos que nao a querem.
     """
     return df["reclamacoes"] / (df["km"] / 10_000)
 

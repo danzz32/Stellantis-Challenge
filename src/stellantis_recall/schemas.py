@@ -105,8 +105,14 @@ class TrustedSchema(pa.DataFrameModel):
     class Config:  # noqa: D106 - configuracao declarativa do pandera
         name = "TrustedSchema"
         strict = True
-        coerce = True
         unique_column_names = True
+        # Sem coercao, ao contrario do RawSchema. Aqui o contrato *verifica* que
+        # `transform.tipar` fez o seu trabalho, em vez de consertar o tipo por
+        # conta propria -- e a diferenca importa no alvo: com coercao, uma
+        # coluna que chegasse como texto teria 'Sim' e 'Nao' convertidos ambos
+        # para True (qualquer string nao vazia e verdadeira), corrompendo o alvo
+        # sem emitir um unico erro.
+        coerce = False
 
 
 #: Ordem canonica das colunas da camada trusted.
@@ -138,7 +144,7 @@ class FeaturesSchema(TrustedSchema):
     class Config:  # noqa: D106 - configuracao declarativa do pandera
         name = "FeaturesSchema"
         strict = True
-        coerce = True
+        coerce = False  # mesma razao do TrustedSchema
 
 
 class AgregadoRiscoSchema(pa.DataFrameModel):
