@@ -174,6 +174,52 @@ a decomposição exata da predição.
 
 ---
 
+## Publicação do painel (Streamlit Community Cloud)
+
+O repositório já está preparado. Passos:
+
+1. Suba tudo para o GitHub — inclusive `data/mart/`, `outputs/models/` e
+   `outputs/metrics/`, que são versionados de propósito (ver abaixo).
+2. Em [share.streamlit.io](https://share.streamlit.io), **New app** → selecione
+   o repositório e o branch.
+3. **Main file path:** `app/streamlit_app.py`
+4. Em **Advanced settings**, escolha **Python 3.13** — o projeto usa
+   `requires-python = ">=3.13"` e o padrão da plataforma é mais antigo.
+5. **Deploy**. O primeiro boot instala as dependências e leva alguns minutos.
+
+Não há segredos a configurar: o painel não acessa nenhum serviço externo.
+
+### Três decisões que este deploy exigiu
+
+**`requirements.txt` em vez de `uv.lock`.** A plataforma não lê o formato do uv.
+O arquivo na raiz é gerado a partir do lock, então o painel publicado roda
+exatamente as versões testadas localmente. O `-e .` na primeira linha instala o
+próprio pacote, sem o qual `import stellantis_recall` falharia.
+
+**É um subconjunto deliberado das dependências.** Ficam de fora `xgboost`,
+`shap`, `openpyxl` e `tabulate` — juntos passam de 400 MB instalados, contra o
+limite de 1 GB do Community Cloud. Os dois primeiros são importados **dentro das
+funções que os usam** (`construir_modelos()` e `valores_shap()`), ambas
+exclusivas do treino. O painel apenas carrega o modelo já ajustado.
+
+**Os artefatos derivados são versionados.** O ambiente publicado não roda o
+pipeline: ele lê `data/mart/*.parquet`, `outputs/models/model.joblib` e
+`outputs/metrics/*.parquet` no boot. Sem esses arquivos no repositório o deploy
+sobe e quebra na primeira requisição. São ~470 KB, e a alternativa — treinar a
+cada boot frio — tornaria a publicação lenta e frágil. Eles continuam
+reprodutíveis a partir de `data/raw/` pelos comandos da seção anterior.
+
+Para regenerar o `requirements.txt` depois de mudar dependências:
+
+```bash
+uv export --no-dev --no-hashes --format requirements-txt
+```
+
+Extraia dessa saída apenas as bibliotecas que o painel importa e mantenha os
+comentários explicativos do arquivo atual.
+
+---
+
 ## Estado atual
 
 - [x] **Parte 1 — Análise exploratória:** contrato de ingestão, avaliação de

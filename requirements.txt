@@ -1,0 +1,28 @@
+# Dependências do painel Streamlit em produção.
+#
+# O Streamlit Community Cloud não lê `uv.lock`; este arquivo existe só para ele.
+# A fonte da verdade do ambiente de desenvolvimento continua sendo o lock, e as
+# versões abaixo foram extraídas dele — o painel publicado roda exatamente o que
+# foi testado localmente.
+#
+# É um SUBCONJUNTO deliberado das dependências do projeto. Ficam de fora:
+#   xgboost  -- só o treino precisa; importado dentro de `construir_modelos()`
+#   shap     -- idem, dentro de `valores_shap()`
+#   openpyxl -- só a ingestão do .xlsx, que não roda no painel
+#   tabulate -- só o `to_markdown()` dos documentos Quarto
+# Juntos passam de 400 MB instalados, contra o limite de 1 GB do Community Cloud.
+#
+# Para regenerar: ver a seção "Publicação" do README.
+
+-e .
+
+streamlit==1.62.0
+streamlit-shadcn-ui==1.1.0
+pandas==3.0.5
+numpy==2.5.2
+pyarrow==25.0.1
+duckdb==1.5.5
+pandera==0.32.1
+scipy==1.18.0
+scikit-learn==1.9.0
+matplotlib==3.11.1

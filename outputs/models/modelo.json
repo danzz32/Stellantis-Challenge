@@ -1,0 +1,14 @@
+{
+  "modelo": "regressao_logistica",
+  "conjunto_features": "sem_modelo",
+  "colunas": [
+    "idade_veiculo",
+    "km",
+    "reclamacoes"
+  ],
+  "metrica_selecao": "roc_auc",
+  "valor_metrica_selecao": 0.7936224768139661,
+  "seed": 42,
+  "n_dobras": 5,
+  "n_repeticoes": 5
+}

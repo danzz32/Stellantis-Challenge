@@ -16,13 +16,21 @@ _freeze/
 *_files/
 .jupyter_cache/
 
-# Artefatos gerados pelo pipeline (reconstrutiveis com `uv run recall-pipeline`)
+# Artefatos intermediarios, reconstrutiveis e nao consumidos por ninguem fora do
+# proprio pipeline.
 data/trusted/*.parquet
-data/mart/*.parquet
-outputs/models/*
-outputs/metrics/*
 outputs/figures/*
 !outputs/**/.gitkeep
+
+# `data/mart/` e `outputs/{models,metrics}/` sao VERSIONADOS de proposito, ainda
+# que derivados. O painel publicado no Streamlit Community Cloud le esses
+# arquivos no boot e nao roda o pipeline: sem eles no repositorio, o deploy sobe
+# e quebra com FileNotFoundError na primeira requisicao. Sao ~470 KB no total --
+# pequenos o bastante para versionar, e a alternativa (treinar a cada boot frio)
+# tornaria a publicacao lenta e fragil.
+#
+# Continuam reprodutiveis: `uv run recall-pipeline` seguido dos tres modulos de
+# modelagem os reconstroi identicamente a partir de data/raw/.
 
 # Os entregaveis renderizados em reports/ sao versionados de proposito:
 # fazem parte da entrega do desafio.

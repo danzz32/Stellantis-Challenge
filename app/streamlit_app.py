@@ -257,6 +257,48 @@ def titulo_secao(texto: str, apoio: str | None = None) -> None:
         st.caption(apoio)
 
 
+#: Artefatos sem os quais o painel nao tem o que mostrar. Sao versionados
+#: justamente porque o ambiente publicado nao roda o pipeline.
+ARTEFATOS_OBRIGATORIOS = (
+    config.MART_FEATURES,
+    config.MART_RANKING_RISCO,
+    config.MODELO_FINAL,
+    config.MODELO_METADADOS,
+    config.DECISAO_OPERACIONAL,
+    config.CURVA_GANHO,
+)
+
+
+def exigir_artefatos() -> None:
+    """Interrompe com diagnostico util se a camada de dados nao existir.
+
+    Sem esta checagem, um artefato ausente produz um `FileNotFoundError` cru no
+    meio da pagina -- pessima experiencia em ambiente publicado, onde quem abre
+    o painel nao tem acesso ao terminal nem sabe o que e um Parquet.
+    """
+    ausentes = [caminho for caminho in ARTEFATOS_OBRIGATORIOS if not caminho.is_file()]
+    if not ausentes:
+        return
+
+    st.error("Os artefatos de dados não foram encontrados.")
+    st.markdown(
+        "Este painel **lê** a camada `mart` e as métricas já calculadas; ele não "
+        "treina nada. Para gerá-los a partir de `data/raw/`:\n\n"
+        "```bash\n"
+        "uv run recall-pipeline\n"
+        "uv run python -m stellantis_recall.modeling.train\n"
+        "uv run python -m stellantis_recall.modeling.evaluate\n"
+        "uv run python -m stellantis_recall.modeling.explain\n"
+        "```"
+    )
+    with st.expander("Arquivos ausentes"):
+        for caminho in ausentes:
+            st.code(str(caminho.relative_to(config.PROJECT_ROOT)), language="text")
+    st.stop()
+
+
+exigir_artefatos()
+
 dados = carregar_dados()
 pipeline, metadados = carregar_modelo()
 decisao = evaluate.carregar_decisao()

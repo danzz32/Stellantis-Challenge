@@ -53,7 +53,6 @@ from sklearn.model_selection import RepeatedStratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
 from scipy import stats
-from xgboost import XGBClassifier
 
 from .. import build_mart, config
 
@@ -171,7 +170,16 @@ def construir_preprocessador(
 
 
 def construir_modelos() -> dict[str, tuple[object, bool]]:
-    """Devolve `nome -> (estimador, sensivel_a_escala)`."""
+    """Devolve `nome -> (estimador, sensivel_a_escala)`.
+
+    O XGBoost e importado aqui dentro, e nao no topo do modulo, pelo mesmo
+    motivo que o SHAP em `explain.py`: ele so e necessario para *treinar*. Quem
+    apenas carrega o modelo ja ajustado -- o painel interativo, por exemplo --
+    passa a nao depender de um pacote de centenas de megabytes, o que importa em
+    ambientes de publicacao com limite de recursos.
+    """
+    from xgboost import XGBClassifier
+
     return {
         # Piso de referencia: prediz sempre a classe majoritaria. Qualquer
         # modelo precisa superar 52,1% de Accuracy para ter serventia.

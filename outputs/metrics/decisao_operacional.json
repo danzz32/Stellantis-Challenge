@@ -1,0 +1,16 @@
+{
+  "modelo": "regressao_logistica",
+  "conjunto_features": "sem_modelo",
+  "razao_custo": 3.0,
+  "limiar_operacional": 0.231,
+  "limiar_ic_inferior": 0.214,
+  "limiar_ic_superior": 0.248,
+  "taxa_sinalizacao": 0.7519,
+  "falsos_negativos_medios": 12.0,
+  "falsos_positivos_medios": 148.2,
+  "erro_absoluto_medio_calibracao": 0.0745,
+  "captura_top30": 0.4895,
+  "lift_top30": 1.63,
+  "captura_top50": 0.7113,
+  "lift_top50": 1.42
+}
