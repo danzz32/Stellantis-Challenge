@@ -185,6 +185,95 @@ def cor_por_risco(taxa: float, minimo: float = 0.0, maximo: float = 1.0) -> str:
     return mpl.colors.to_hex(MAPA_RISCO(min(max(posicao, 0.0), 1.0)))
 
 
+# --------------------------------------------------------------------------- #
+# Tema Plotly
+#
+# Os documentos (relatorio, PDF, painel Quarto) continuam em matplotlib: eles
+# precisam renderizar identicamente em HTML e em PDF, sem depender de motor
+# JavaScript. O painel interativo usa Plotly, porque ali a leitura ganha com
+# hover e zoom.
+#
+# Os dois motores compartilham *as mesmas constantes* deste modulo, entao a
+# identidade visual e a semantica de cor -- azul e risco, cinza e neutro -- se
+# mantem identicas. O que muda e apenas o mecanismo de desenho.
+# --------------------------------------------------------------------------- #
+
+#: Escala continua de risco, equivalente a `MAPA_RISCO` em formato Plotly.
+ESCALA_RISCO_PLOTLY = [
+    [0.00, BRANCO],
+    [0.33, CINZA],
+    [0.72, AZUL],
+    [1.00, AZUL_PROFUNDO],
+]
+
+
+def tema_plotly():
+    """Constroi o template Plotly do projeto.
+
+    Importa o Plotly de forma preguicosa: os modulos de dados e de modelagem nao
+    dependem dele, e so o painel interativo chama esta funcao.
+    """
+    import plotly.graph_objects as go
+
+    eixo = dict(
+        gridcolor=GRADE,
+        linecolor=GRADE,
+        zeroline=False,
+        showline=True,
+        ticks="outside",
+        tickcolor=GRADE,
+        tickfont=dict(color=TINTA_SUAVE, size=11),
+        title=dict(font=dict(color=TINTA_SUAVE, size=12)),
+        automargin=True,
+    )
+
+    return go.layout.Template(
+        layout=go.Layout(
+            # Formato numerico brasileiro: virgula decimal, ponto para milhar.
+            # Vale para eixos, rotulos e caixas de hover de uma so vez.
+            separators=",.",
+            font=dict(
+                family="Segoe UI, -apple-system, Helvetica Neue, Arial, sans-serif",
+                color=TINTA,
+                size=12,
+            ),
+            paper_bgcolor=BRANCO,
+            plot_bgcolor=BRANCO,
+            colorway=list(SEQUENCIA),
+            colorscale=dict(sequential=ESCALA_RISCO_PLOTLY),
+            title=dict(
+                font=dict(color=AZUL_PROFUNDO, size=15),
+                x=0.0,
+                xanchor="left",
+            ),
+            xaxis=eixo,
+            yaxis=eixo,
+            hoverlabel=dict(
+                bgcolor=AZUL_PROFUNDO,
+                bordercolor=AZUL_PROFUNDO,
+                font=dict(color=BRANCO, size=12),
+                align="left",
+            ),
+            hovermode="closest",
+            legend=dict(
+                bgcolor="rgba(0,0,0,0)",
+                bordercolor="rgba(0,0,0,0)",
+                font=dict(size=11),
+            ),
+            margin=dict(l=10, r=10, t=44, b=10),
+        )
+    )
+
+
+def aplicar_tema_plotly(nome: str = "stellantis") -> str:
+    """Registra o template como padrao. Chamar uma vez por sessao do painel."""
+    import plotly.io as pio
+
+    pio.templates[nome] = tema_plotly()
+    pio.templates.default = nome
+    return nome
+
+
 def salvar(figura: Figure, nome: str, diretorio: Path | None = None) -> Path:
     """Persiste a figura em `outputs/figures/` e devolve o caminho gravado."""
     diretorio = diretorio or config.FIGURES_DIR

@@ -88,7 +88,8 @@ dela.
 | **DuckDB** | agregações analíticas | SQL versionado em `sql/`, e a *mesma* consulta serve relatório e dashboard |
 | **Quarto** | documentos | uma base de código, três saídas: HTML, PDF executivo e dashboard |
 | **scikit-learn / XGBoost / SHAP** | modelagem e interpretação | — |
-| **Streamlit** | simulador interativo de risco | complemento opcional ao dashboard estático |
+| **Streamlit + shadcn-ui** | painel interativo | simulador de custo, planejador de capacidade e score por veículo |
+| **Plotly** | gráficos do painel | hover, zoom e legenda clicável; os documentos seguem em matplotlib |
 
 Uma nota de honestidade sobre o DuckDB: 500 linhas não exigem um motor analítico
 por desempenho. Ele está aqui porque mantém as agregações em SQL declarativo,
@@ -169,8 +170,15 @@ O painel Quarto e o Streamlit cobrem as mesmas cinco visões e leem os mesmos
 arquivos Parquet. O estático é o entregável — abre sem servidor. O interativo
 acrescenta o que um documento não pode fazer: **planejador de capacidade de
 inspeção**, **simulador de razão de custo** (que recalcula limiar e métricas ao
-vivo sobre as predições fora da amostra) e **score de veículo individual** com
-a decomposição exata da predição.
+vivo sobre as predições fora da amostra), **score de veículo individual** com a
+decomposição exata da predição, e **gráficos Plotly** onde o hover revela o que
+não cabe no rótulo — o limiar de cada ponto da curva ROC, o tamanho amostral de
+cada segmento, o intervalo de confiança de cada barra.
+
+Os dois motores gráficos consomem as mesmas constantes de `viz.py`: paleta e
+semântica de cor são idênticas, muda apenas o mecanismo de desenho. Os
+documentos permanecem em matplotlib por precisarem renderizar igualmente em
+HTML e PDF, sem depender de motor JavaScript.
 
 ---
 
