@@ -1,0 +1,549 @@
+---
+title: "Predição de Recall a partir de Ocorrências de Garantia"
+subtitle: "Parte 1 — Análise Exploratória e Qualidade dos Dados"
+author: "Desafio técnico · Bolsista Cientista de Dados"
+date: today
+date-format: "DD/MM/YYYY"
+abstract: |
+  Análise exploratória de 500 registros sintéticos de garantia, cobrindo
+  avaliação de qualidade, estatística descritiva e estrutura de associação
+  entre as variáveis. O documento estabelece o que o dado sustenta — e o que
+  ele não sustenta — antes de qualquer decisão de modelagem.
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from stellantis_recall import config, eda, ingest, viz
+
+viz.aplicar_tema()
+pd.set_option("display.max_columns", 40)
+pd.set_option("display.width", 160)
+
+
+def pct(serie, casas=1):
+    """Formata uma proporção como percentual para exibição em tabela."""
+    return (serie * 100).round(casas).astype(str) + "%"
+```
+
+## Escopo e premissas
+
+O objetivo desta etapa é responder três perguntas antes de treinar qualquer
+modelo: **o dado é confiável**, **o que ele descreve**, e **quais relações ele
+sustenta estatisticamente**. As decisões de limpeza registradas ao final desta
+análise são a especificação da etapa seguinte (`transform.py`) — nenhuma
+transformação é aplicada aqui.
+
+Três premissas explícitas:
+
+1. **Os dados são sintéticos**, conforme o enunciado. Nenhuma conclusão desta
+   análise descreve a frota real da Stellantis; o que se avalia é o método.
+2. **Não há chave primária nem coluna de data.** Cada linha é um veículo
+   anônimo, e `idade_veiculo` é a única dimensão temporal disponível.
+3. **`Recall` é o desfecho observado**, não uma previsão. O problema é de
+   classificação binária supervisionada sobre quatro preditoras.
+
+## Origem e contrato do dado
+
+A ingestão lê a planilha de origem, normaliza os cabeçalhos para
+`snake_case` sem acento e valida o resultado contra um contrato declarado em
+`pandera` (`RawSchema`). O contrato cobre tipo, obrigatoriedade e domínio de
+cada coluna — os limites de domínio são de **plausibilidade de negócio**, não o
+intervalo observado na amostra, para que uma carga futura com valores novos
+mas válidos não seja rejeitada por engano.
+
+```{python}
+#| label: tbl-contrato
+#| tbl-cap: "Resultado da validação do contrato de ingestão."
+
+df, relatorio = ingest.carregar_bruto()
+con = eda.conectar(df)
+
+print(relatorio.resumo())
+
+pd.DataFrame(
+    {
+        "coluna": df.columns,
+        "tipo": [str(t) for t in df.dtypes],
+        "exemplo": [df[c].iloc[0] for c in df.columns],
+    }
+)
+```
+
+A validação passa: 500 linhas, 5 colunas, nenhum valor fora de domínio e nenhum
+nulo. Isso é o *piso*, não o teto — o contrato garante estrutura, e a seção
+seguinte investiga as falhas de qualidade que um contrato estrutural não pega.
+
+## Avaliação de qualidade
+
+### Perfil por coluna
+
+```{python}
+#| label: tbl-qualidade
+#| tbl-cap: "Perfil de preenchimento, cardinalidade e amplitude por coluna."
+
+qualidade = eda.consultar(con, "qualidade_dados")
+qualidade
+```
+
+Preenchimento integral em todas as colunas. Dois pontos de atenção na
+cardinalidade: `km` tem 494 valores distintos em 500 linhas — comportamento de
+variável contínua, coerente; `idade_veiculo` tem apenas 9 níveis (0 a 8), o que
+a torna, na prática, uma variável ordinal discreta e não contínua.
+
+### Duplicatas
+
+```{python}
+#| label: tbl-duplicatas
+#| tbl-cap: "Linhas integralmente duplicadas."
+
+duplicadas = eda.duplicatas(df)
+duplicadas
+```
+
+Existe **uma** linha repetida. Sem chave primária, ela é ambígua: pode ser o
+mesmo registro carregado duas vezes, ou dois veículos distintos que coincidem
+em todas as quatro características. O detalhe que decide a leitura é o valor de
+`km` — 1.000, exatamente o mínimo do dataset. Isso sugere colisão no piso do
+gerador sintético (dois veículos novos, ambos no limite inferior), e não erro de
+carga.
+
+::: {.achado}
+**Decisão:** remover a duplicata mesmo assim. Uma linha em 500 (0,2%) não
+altera nenhuma estatística de forma material, e mantê-la introduziria o mesmo
+registro em treino e teste na validação cruzada — um vazamento pequeno, porém
+gratuito. O critério aqui é de risco assimétrico, não de magnitude.
+:::
+
+### Valores extremos
+
+```{python}
+#| label: tbl-outliers
+#| tbl-cap: "Limites de Tukey (1,5 × IQR) e contagem de pontos fora deles."
+
+outliers = eda.resumo_outliers(df)
+outliers.assign(pct_outliers=pct(outliers["pct_outliers"]))
+```
+
+Nenhum extremo em `idade_veiculo` ou `km`. Em `reclamacoes`, 10 registros (2,0%)
+ficam acima do limite superior de 9,5 — são veículos com 10 a 13 reclamações.
+
+::: {.achado}
+**Decisão: não remover.** Esses registros são a cauda de uma distribuição de
+contagem assimétrica à direita (assimetria = 0,57), não erro de medição — e são
+justamente os veículos de maior interesse para o problema de negócio. Excluí-los
+removeria o sinal que o modelo precisa aprender. A cauda será tratada por
+transformação de escala na engenharia de atributos, se necessário.
+:::
+
+### Coerência interna entre `km` e `idade_veiculo`
+
+`km` e `idade_veiculo` são declarados de forma independente na origem. A razão
+entre eles — rodagem anual implícita — permite testar se as duas colunas contam
+a mesma história.
+
+```{python}
+#| label: tbl-km-ano
+#| tbl-cap: "Rodagem anual implícita (veículos com idade ≥ 1 ano)."
+
+km_ano = eda.consistencia_km_ano(df)
+
+pd.DataFrame(
+    {
+        "métrica": [
+            "veículos avaliados",
+            "veículos com idade 0 (excluídos)",
+            "km/ano — mínimo",
+            "km/ano — mediana",
+            "km/ano — máximo",
+            f"fora da faixa plausível ({config.KM_ANO_MIN:,}–{config.KM_ANO_MAX:,})",
+        ],
+        "valor": [
+            f"{len(km_ano)}",
+            f"{(df['idade_veiculo'] == 0).sum()}",
+            f"{km_ano['km_por_ano'].min():,.0f}",
+            f"{km_ano['km_por_ano'].median():,.0f}",
+            f"{km_ano['km_por_ano'].max():,.0f}",
+            f"{int(km_ano['fora_da_faixa'].sum())}",
+        ],
+    }
+)
+```
+
+Nenhum registro fora da faixa plausível. As duas colunas são internamente
+coerentes — e essa coerência tem consequência direta na modelagem, retomada na
+seção de multicolinearidade.
+
+## Estatística descritiva
+
+### Variáveis numéricas
+
+```{python}
+#| label: tbl-descritivas
+#| tbl-cap: "Descritivas estendidas: posição, dispersão e forma."
+
+eda.estatisticas_numericas(df).round(2)
+```
+
+A curtose negativa de `idade_veiculo` (−1,26) e de `km` (−1,06) indica
+distribuições **achatadas**, próximas da uniforme, e não normais. É a assinatura
+esperada de dados gerados por amostragem uniforme — um indício, entre outros, de
+que a base é sintética e balanceada por construção. `reclamacoes` foge desse
+padrão: assimetria positiva de 0,57, típica de dado de contagem real.
+
+### Variável categórica e alvo
+
+```{python}
+#| label: tbl-categoricas
+#| tbl-cap: "Cardinalidade e concentração de `modelo`, e distribuição do alvo."
+
+display(eda.estatisticas_categoricas(df))
+
+alvo = eda.distribuicao_alvo(df)
+display(alvo.assign(proporcao=pct(alvo["proporcao"])))
+```
+
+Os 9 modelos estão distribuídos de forma quase uniforme (48 a 66 veículos), sem
+categoria dominante nem categoria rara. O alvo está **praticamente balanceado**:
+47,8% de recalls contra 52,2%.
+
+::: {.achado}
+**Consequência metodológica:** com classes balanceadas, *Accuracy* é uma métrica
+honesta neste problema — o classificador trivial atinge apenas 52,2%, então
+qualquer ganho sobre esse piso é informativo. Não há necessidade de
+reamostragem (SMOTE) nem de ponderação de classe. Precision, Recall e F1
+continuam necessários, porém, pelo motivo oposto: o custo dos dois tipos de erro
+é assimétrico mesmo com as classes equilibradas.
+:::
+
+### Distribuições por classe
+
+```{python}
+#| label: fig-distribuicoes
+#| fig-cap: "Distribuição de cada preditora, separada pelo desfecho de recall."
+
+fig, eixos = plt.subplots(1, 3, figsize=(11.5, 3.6))
+
+grupos = [(rotulo, sub) for rotulo, sub in df.groupby(config.COLUNA_ALVO)]
+
+# Km: contínua -> histograma sobreposto
+for rotulo, sub in grupos:
+    eixos[0].hist(
+        sub["km"], bins=22, alpha=0.65,
+        color=viz.CORES_ALVO[rotulo], label=rotulo,
+    )
+eixos[0].set_title("Quilometragem")
+eixos[0].set_xlabel("km")
+eixos[0].set_ylabel("veículos")
+eixos[0].xaxis.set_major_formatter(
+    plt.FuncFormatter(lambda v, _: f"{v/1000:.0f}k")
+)
+
+# Idade e reclamações: discretas -> barras agrupadas
+for eixo, coluna, titulo in (
+    (eixos[1], "idade_veiculo", "Idade do veículo"),
+    (eixos[2], "reclamacoes", "Reclamações"),
+):
+    tabela = pd.crosstab(df[coluna], df[config.COLUNA_ALVO])
+    posicoes = np.arange(len(tabela))
+    largura = 0.42
+    for deslocamento, rotulo in zip((-largura / 2, largura / 2), tabela.columns):
+        eixo.bar(
+            posicoes + deslocamento, tabela[rotulo], largura,
+            color=viz.CORES_ALVO[rotulo], label=rotulo,
+        )
+    eixo.set_xticks(posicoes)
+    eixo.set_xticklabels(tabela.index)
+    eixo.set_title(titulo)
+    eixo.set_xlabel("anos" if coluna == "idade_veiculo" else "ocorrências")
+
+for eixo in eixos:
+    viz.apenas_grade_horizontal(eixo)
+eixos[0].legend(title="Recall")
+
+fig.tight_layout()
+plt.show()
+```
+
+O padrão é consistente nas três: veículos com recall concentram-se à direita em
+todas as preditoras. A separação é clara mas **não é limpa** — há sobreposição
+substancial em toda a faixa central, o que antecipa que nenhum modelo alcançará
+acurácia próxima de 100%.
+
+## Estrutura de associação
+
+### Correlações
+
+```{python}
+#| label: fig-correlacao
+#| fig-cap: "Correlação de Pearson entre preditoras numéricas e o alvo binarizado."
+
+matriz = eda.matriz_correlacao(df)
+rotulos = ["Idade", "Km", "Reclamações", "Recall"]
+
+fig, eixo = plt.subplots(figsize=(5.4, 4.4))
+imagem = eixo.imshow(matriz, cmap="RdYlBu_r", vmin=-1, vmax=1)
+
+eixo.set_xticks(range(len(rotulos)), rotulos, rotation=30, ha="right")
+eixo.set_yticks(range(len(rotulos)), rotulos)
+eixo.grid(False)
+
+for i in range(len(rotulos)):
+    for j in range(len(rotulos)):
+        valor = matriz.iloc[i, j]
+        eixo.text(
+            j, i, f"{valor:.2f}", ha="center", va="center",
+            color="white" if abs(valor) > 0.6 else viz.TINTA,
+            fontsize=10, fontweight="semibold",
+        )
+
+eixo.set_title("Matriz de correlação")
+fig.colorbar(imagem, ax=eixo, shrink=0.8)
+fig.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-corr-alvo
+#| tbl-cap: "Correlação de cada preditora com o alvo (ponto-bisserial e Spearman)."
+
+eda.correlacao_com_alvo(df).round(4)
+```
+
+As três preditoras numéricas têm associação **moderada e estatisticamente
+significante** com o alvo, e de magnitude muito parecida entre si: 0,484
+(idade), 0,482 (km) e 0,452 (reclamações). A concordância entre Pearson e
+Spearman indica que as relações são monotônicas, sem distorção por extremos.
+
+Nenhuma preditora isolada explica o desfecho — o maior $r$ corresponde a
+$r^2 \approx 23\%$ da variância. O sinal existe e é real, mas exige combinação
+de variáveis.
+
+### Multicolinearidade
+
+```{python}
+#| label: tbl-vif
+#| tbl-cap: "Fator de inflação da variância (VIF) das preditoras numéricas."
+
+eda.fator_inflacao_variancia(df).round(2)
+```
+
+::: {.achado}
+**Achado central da análise exploratória.** A correlação entre `idade_veiculo` e
+`km` é de **0,947**, com VIF de 10,4 e 9,7 respectivamente — acima do limiar
+convencional de 10 para colinearidade severa. As duas colunas carregam
+essencialmente a mesma informação: como visto na seção de coerência, `km` é
+aproximadamente `idade × 18.500`.
+
+**Consequências diretas para a Parte 2:**
+
+- **Regressão Logística** sem regularização terá coeficientes instáveis e de
+  sinal potencialmente invertido. Os coeficientes deixam de ser interpretáveis
+  individualmente, o que anula a principal vantagem do modelo. Se for usada,
+  precisa de penalização L2 — e a interpretação passa a ser conjunta.
+- **Modelos baseados em árvore** (Random Forest, XGBoost) são robustos à
+  colinearidade na *predição*, mas não na *interpretação*: a importância se
+  divide arbitrariamente entre as duas variáveis correlacionadas, subestimando
+  ambas. Isso exige `permutation importance` por grupo, ou o descarte de uma
+  delas, na Parte 4.
+- **Alternativa a testar:** substituir o par por `idade_veiculo` +
+  `km_por_ano`, que ortogonaliza a intensidade de uso em relação ao tempo de
+  vida e preserva as duas dimensões sem redundância.
+:::
+
+### `modelo` × `recall`: o ranking pedido tem base estatística?
+
+O dashboard executivo (Parte 5) pede um *ranking de modelos de maior risco*. A
+pergunta anterior a essa é se as diferenças entre modelos são distinguíveis do
+acaso.
+
+```{python}
+#| label: tbl-qui-quadrado
+#| tbl-cap: "Teste qui-quadrado de independência entre modelo e recall."
+
+teste = eda.qui_quadrado_com_alvo(df, "modelo")
+print(teste.frase())
+
+ranking = eda.consultar(con, "ranking_risco")
+ranking.assign(
+    taxa_recall=pct(ranking["taxa_recall"]),
+    ic_inferior=pct(ranking["ic_inferior"]),
+    ic_superior=pct(ranking["ic_superior"]),
+).drop(columns=["amplitude_ic"])
+```
+
+```{python}
+#| label: fig-ranking
+#| fig-cap: "Taxa de recall por modelo, com intervalo de confiança de Wilson (95%). A linha tracejada marca a taxa global."
+
+ordenado = ranking.sort_values("taxa_recall")
+posicoes = np.arange(len(ordenado))
+erro = np.vstack([
+    ordenado["taxa_recall"] - ordenado["ic_inferior"],
+    ordenado["ic_superior"] - ordenado["taxa_recall"],
+])
+
+fig, eixo = plt.subplots(figsize=(8.2, 4.4))
+eixo.barh(posicoes, ordenado["taxa_recall"], color=viz.AZUL, alpha=0.85, height=0.62)
+eixo.errorbar(
+    ordenado["taxa_recall"], posicoes, xerr=erro, fmt="none",
+    ecolor=viz.TINTA, elinewidth=1.4, capsize=4,
+)
+eixo.axvline(
+    eda.alvo_binario(df).mean(), color=viz.VERMELHO,
+    linestyle="--", linewidth=1.4, label="taxa global (47,8%)",
+)
+
+eixo.set_yticks(posicoes, ordenado["modelo"])
+eixo.set_xlabel("taxa de recall")
+eixo.set_title("Ranking de risco por modelo — com incerteza amostral")
+eixo.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+eixo.grid(axis="y", visible=False)
+eixo.legend(loc="lower right")
+
+fig.tight_layout()
+plt.show()
+```
+
+::: {.limitacao}
+**O ranking por modelo não se sustenta estatisticamente.** O teste
+qui-quadrado não rejeita a independência ($\chi^2(8) = 6{,}69$; $p = 0{,}570$),
+e o V de Cramér de 0,116 indica associação fraca. O intervalo de confiança do
+primeiro colocado (Toro: 44,2%–69,7%) contém integralmente o do último
+(Fastback: 26,1%–50,0%) — as posições **não são distinguíveis**.
+
+A causa é tamanho de amostra: cerca de 55 veículos por modelo produzem
+intervalos de ±13 pontos percentuais, largos demais para separar taxas que
+diferem em 20 pontos.
+
+**Como isso será tratado na Parte 5:** o ranking será entregue, porque foi
+pedido — mas com as barras de erro visíveis e a ressalva explícita de que a
+ordenação é instável. Apresentar a tabela ordenada sem essa qualificação levaria
+a diretoria a priorizar inspeções em um modelo por ruído amostral. Este é o
+tipo de decisão que a análise existe para evitar.
+:::
+
+### Gradiente de risco: reclamações e idade
+
+Se `modelo` não discrimina, as variáveis contínuas discriminam?
+
+```{python}
+#| label: fig-gradientes
+#| fig-cap: "Taxa de recall por número de reclamações e por idade do veículo, com intervalo de Wilson (95%)."
+
+por_reclamacoes = eda.taxa_por_grupo(df, "reclamacoes")
+evolucao = eda.consultar(con, "evolucao_por_idade")
+inf_idade, sup_idade = eda.intervalo_wilson(
+    evolucao["n_recalls"], evolucao["n_veiculos"]
+)
+
+fig, (esq, dir) = plt.subplots(1, 2, figsize=(11.5, 4.0))
+
+# Reclamações — apenas níveis com massa amostral suficiente para leitura
+robustos = por_reclamacoes[por_reclamacoes["n"] >= 10]
+esq.errorbar(
+    robustos["reclamacoes"], robustos["taxa_recall"],
+    yerr=np.vstack([
+        robustos["taxa_recall"] - robustos["ic_inferior"],
+        robustos["ic_superior"] - robustos["taxa_recall"],
+    ]),
+    fmt="o-", color=viz.AMBAR, ecolor=viz.CINZA,
+    elinewidth=1.2, capsize=3, markersize=6,
+)
+esq.set_title("Taxa de recall por nº de reclamações")
+esq.set_xlabel("reclamações registradas")
+esq.set_ylabel("taxa de recall")
+viz.rotular_percentual(esq)
+
+# Idade
+dir.plot(
+    evolucao["idade_veiculo"], evolucao["taxa_recall"],
+    "o-", color=viz.AZUL, markersize=6, label="taxa por idade",
+)
+dir.fill_between(
+    evolucao["idade_veiculo"], inf_idade, sup_idade,
+    color=viz.AZUL, alpha=0.15, label="IC 95% (Wilson)",
+)
+dir.set_title("Taxa de recall por idade do veículo")
+dir.set_xlabel("idade (anos)")
+dir.set_ylabel("taxa de recall")
+viz.rotular_percentual(dir)
+dir.legend(loc="upper left")
+
+for eixo in (esq, dir):
+    viz.apenas_grade_horizontal(eixo)
+
+fig.tight_layout()
+plt.show()
+```
+
+Aqui o contraste com `modelo` é gritante. A taxa de recall sobe de **4,9% aos 0
+anos para 85,2% aos 8 anos**, e de **10,9% com zero reclamações para acima de
+70% a partir de 7 reclamações**. Os intervalos de confiança dos extremos não se
+tocam nem de longe — este é sinal genuíno, não ruído.
+
+Duas observações finas:
+
+- A curva de idade **não é monotônica**: aos 3 anos a taxa cai para 33,3%,
+  abaixo dos 44,1% observados aos 2 anos. Com ~50 veículos por faixa etária, a
+  inversão está dentro da margem de erro e não deve ser interpretada como
+  fenômeno real.
+- A curva de reclamações apresenta um **degrau entre 2 e 3 ocorrências** (28,0%
+  → 58,3%), e depois estabiliza. Isso sugere um limiar no processo gerador, e
+  justifica testar uma variável indicadora `reclamacoes >= 3` na engenharia de
+  atributos.
+
+## Síntese e decisões
+
+### Backlog de limpeza para `transform.py`
+
+```{python}
+#| label: tbl-decisoes
+#| tbl-cap: "Decisões de tratamento derivadas desta análise."
+
+pd.DataFrame(
+    [
+        ("Duplicata (1 linha)", "Remover", "Evita a mesma observação em treino e teste na validação cruzada."),
+        ("Outliers em reclamações (10)", "Manter", "Cauda legítima de contagem; são os veículos de maior interesse."),
+        ("Valores ausentes", "Nenhuma ação", "Não há nulos em nenhuma coluna."),
+        ("Alvo Sim/Não", "Converter para booleano", "Contrato explícito da camada trusted; evita comparação por string."),
+        ("modelo", "Tipar como categórica", "9 níveis fixos; reduz memória e habilita codificação consistente."),
+        ("km × idade_veiculo", "Manter ambas na trusted", "Decisão de seleção pertence à modelagem, não à limpeza."),
+    ],
+    columns=["achado", "decisão", "justificativa"],
+)
+```
+
+### O que a Parte 1 estabelece para a modelagem
+
+1. **O dado é estruturalmente limpo.** Sem nulos, sem inconsistências entre
+   colunas, uma única duplicata. O esforço da entrega deve ir para validação e
+   interpretação, não para saneamento.
+2. **Há sinal real, moderado e distribuído.** Três preditoras com $r \approx
+   0{,}45$–$0{,}48$ e nenhuma dominante. O problema não é trivial nem
+   determinístico: dada a sobreposição das distribuições, o teto realista de
+   acurácia está na faixa de **78% a 84%**, contra um piso de 52,2% do
+   classificador trivial.
+3. **A colinearidade de 0,947 é a principal restrição técnica** e precisa ser
+   endereçada explicitamente na escolha e na interpretação do modelo.
+4. **`modelo` não é preditor útil** — e essa conclusão negativa é um resultado,
+   não uma lacuna. Ela redireciona a recomendação executiva de "qual modelo
+   inspecionar" para "qual perfil de uso inspecionar".
+5. **Com classes balanceadas**, as quatro métricas pedidas são aplicáveis sem
+   ressalva, e o ponto de corte deve ser definido por custo de negócio — não
+   pelo limiar implícito de 0,5.
+
+::: {.limitacao}
+**Limitação transversal.** Os dados são sintéticos e, como mostram a curtose
+negativa de `idade` e `km` e a coerência perfeita entre as duas colunas, foram
+gerados por regras simples. Um modelo ajustado aqui mede a capacidade de
+recuperar essas regras, não a de prever recalls reais. As quatro preditoras
+disponíveis também omitem dimensões que dominariam o problema real: fornecedor
+de componente, planta e lote de produção, tipo e severidade da falha, e a data
+da ocorrência. Isso está detalhado na Parte 4.
+:::

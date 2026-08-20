@@ -1,0 +1,97 @@
+/*-- scss:defaults --*/
+
+// Paleta espelhada de src/stellantis_recall/viz.py -- documento e figuras
+// precisam ler como uma peça só.
+$tinta:        #1b2430;
+$tinta-suave:  #5b6672;
+$grade:        #e3e7ec;
+$azul:         #1f4e79;
+$ambar:        #c8760a;
+$vermelho:     #a4243b;
+$verde:        #3d6b52;
+
+$primary:      $azul;
+$body-color:   $tinta;
+$body-bg:      #ffffff;
+$link-color:   $azul;
+
+$font-family-sans-serif: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+$font-size-root: 16px;
+$line-height-base: 1.65;
+
+$headings-font-weight: 600;
+$h1-font-size: 1.9rem;
+$h2-font-size: 1.4rem;
+$h3-font-size: 1.15rem;
+
+$table-border-color: $grade;
+$code-bg: #f6f8fa;
+$code-color: #43506b;
+
+/*-- scss:rules --*/
+
+body {
+  max-width: none;
+}
+
+// Largura de leitura confortável para prosa; tabelas e figuras podem extrapolar.
+main > p,
+main > ul,
+main > ol,
+main > blockquote {
+  max-width: 46rem;
+}
+
+h2 {
+  border-top: 1px solid $grade;
+  padding-top: 1.4rem;
+  margin-top: 2.6rem;
+}
+
+// Tabelas: densas, alinhadas, sem zebra — o dado é pouco e cabe inteiro na tela.
+table {
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+thead th {
+  border-bottom: 2px solid $tinta-suave !important;
+  font-weight: 600;
+  color: $tinta;
+}
+
+// Blocos de destaque para as conclusões que sustentam decisões de modelagem.
+.callout {
+  border-left-width: 4px;
+}
+
+.achado {
+  border-left: 4px solid $ambar;
+  background: #fdf8f1;
+  padding: 0.9rem 1.1rem;
+  margin: 1.4rem 0;
+  border-radius: 0 4px 4px 0;
+
+  p:last-child { margin-bottom: 0; }
+}
+
+.limitacao {
+  border-left: 4px solid $vermelho;
+  background: #fbf4f5;
+  padding: 0.9rem 1.1rem;
+  margin: 1.4rem 0;
+  border-radius: 0 4px 4px 0;
+
+  p:last-child { margin-bottom: 0; }
+}
+
+// O código é evidência, não conteúdo principal: presente, discreto, dobrável.
+details > summary {
+  color: $tinta-suave;
+  font-size: 0.85rem;
+}
+
+figure figcaption {
+  color: $tinta-suave;
+  font-size: 0.85rem;
+}

@@ -1,0 +1,32 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Quarto
+/.quarto/
+qmd/.quarto/
+_freeze/
+*_files/
+.jupyter_cache/
+
+# Artefatos gerados pelo pipeline (reconstrutiveis com `uv run recall-pipeline`)
+data/trusted/*.parquet
+data/mart/*.parquet
+outputs/models/*
+outputs/metrics/*
+outputs/figures/*
+!outputs/**/.gitkeep
+
+# Os entregaveis renderizados em reports/ sao versionados de proposito:
+# fazem parte da entrega do desafio.
+
+# Caderno de bordo: anotacoes de trabalho, decisoes em aberto e numeros de
+# apoio. Uso local apenas -- nao faz parte da entrega.
+CHANGELOG.md

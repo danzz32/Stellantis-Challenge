@@ -1,0 +1,45 @@
+[project]
+name = "stellantis-recall"
+version = "0.1.0"
+description = "Desafio tecnico: analise exploratoria e modelo preditivo de recall a partir de ocorrencias de garantia (dados sinteticos)."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pandas>=3.0.5",
+    "numpy>=2.1",
+    "pyarrow>=18.0",
+    "duckdb>=1.1",
+    "pandera>=0.22",
+    "openpyxl>=3.1",
+    "scipy>=1.14",
+    "matplotlib>=3.9",
+    "tabulate>=0.9",
+    "scikit-learn>=1.9.0",
+    "xgboost>=3.4.1",
+    "shap>=0.52.0",
+    "streamlit>=1.62.0",
+]
+
+[project.scripts]
+recall-pipeline = "stellantis_recall.pipeline:main"
+recall-ingest = "stellantis_recall.ingest:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ipykernel>=6.29",
+    "nbformat>=5.10",
+    "nbclient>=0.10",
+    "jupyter-cache>=1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stellantis_recall"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,33 @@
+project:
+  type: default
+  title: "Predição de Recall a partir de Ocorrências de Garantia"
+  output-dir: ../reports
+  render:
+    - 01-analise.qmd
+
+lang: pt
+
+execute:
+  echo: true
+  warning: false
+  freeze: false
+
+jupyter: python3
+
+format:
+  html:
+    theme: [cosmo, theme.scss]
+    toc: true
+    toc-depth: 3
+    toc-title: "Conteúdo"
+    number-sections: true
+    number-depth: 2
+    code-fold: true
+    code-summary: "código"
+    code-tools: true
+    code-line-numbers: false
+    fig-align: center
+    fig-responsive: true
+    tbl-cap-location: top
+    embed-resources: true
+    smooth-scroll: true
