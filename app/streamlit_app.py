@@ -18,11 +18,19 @@ Isso garante que os tres entregaveis nunca discordem entre si.
 
 Sobre a camada de apresentacao
 ------------------------------
-O layout usa `streamlit-shadcn-ui` para cartoes, abas, distintivos e tabelas. A
-troca resolve tambem uma inconsistencia de paleta: `st.warning` e `st.error`
-pintam em amarelo e vermelho, que nao pertencem a identidade institucional. Os
-alertas do shadcn em variante neutra respeitam a decisao registrada em
-`viz.py` -- sem cor quente, com enfase por peso de texto e rotulo explicito.
+O layout usa `streamlit-shadcn-ui` para cartoes de metrica, abas, distintivos,
+separadores e tabelas.
+
+Os cartoes de ressalva sao componente proprio, e nao `ui.alert`, por dois
+motivos: o shadcn so oferece as variantes `default` e `destructive` (vermelha),
+e renderiza em shadow DOM, onde nao ha como mirar instancias especificas.
+
+Sobre a cor desses cartoes: a paleta institucional nao tem cor de alerta, e a
+primeira versao resolveu isso com enfase apenas por peso de texto. Na pratica o
+aviso competia de menos pela atencao. As cores de estado -- ambar para aviso,
+verde para confirmacao -- ficam separadas das institucionais de proposito: elas
+comunicam *severidade*, nao identidade de marca. Os graficos seguem sem cor
+quente, com risco codificado por valor, conforme `viz.py`.
 
 Os graficos sao Plotly, e nao matplotlib. Os documentos continuam em matplotlib
 por precisarem renderizar identicamente em HTML e PDF sem motor JavaScript; aqui
@@ -143,6 +151,56 @@ CSS_INSTITUCIONAL = f"""
 [data-testid="stSlider"] [role="slider"] {{
     border-color: {viz.AZUL_PROFUNDO};
 }}
+
+/* Cartões de ressalva.
+   O `ui.alert` do shadcn só oferece as variantes `default` e `destructive`
+   (vermelha), e renderiza em shadow DOM -- não há como mirar instâncias
+   específicas de fora. Daí o componente próprio: um aviso precisa da coloração
+   convencional de aviso para ser lido como tal. */
+.ressalva {{
+    display: flex;
+    align-items: flex-start;
+    gap: 0.72rem;
+    padding: 0.85rem 1.05rem;
+    margin: 0.5rem 0 1.1rem;
+    border-radius: 6px;
+    border-left: 4px solid var(--ressalva-cor);
+    background: var(--ressalva-fundo);
+    font-size: 0.885rem;
+    line-height: 1.55;
+    color: #4A4E57;
+}}
+.ressalva__icone {{
+    flex: 0 0 auto;
+    margin-top: 0.12rem;
+    line-height: 0;
+}}
+.ressalva__titulo {{
+    display: block;
+    margin-bottom: 0.18rem;
+    font-weight: 650;
+    color: #2A2E36;
+}}
+.ressalva code {{
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0.05rem 0.28rem;
+    border-radius: 3px;
+    font-size: 0.86em;
+}}
+
+/* Frase de abertura da página: a conclusão antes da evidência. */
+.abertura {{
+    font-size: 1.02rem;
+    line-height: 1.6;
+    color: #4A4E57;
+    margin: 0.2rem 0 1.1rem;
+    padding-left: 0.9rem;
+    border-left: 3px solid {viz.AZUL};
+}}
+.abertura strong {{
+    color: {viz.AZUL_PROFUNDO};
+    font-weight: 650;
+}}
 </style>
 """
 
@@ -261,18 +319,93 @@ def nota(texto: str) -> None:
     st.caption(texto)
 
 
-def ressalva(titulo: str, descricao: str, chave: str) -> None:
-    """Ressalva estatistica que precisa ser lida antes da conclusao.
+# --------------------------------------------------------------------------- #
+# Cartoes de ressalva
+#
+# A paleta institucional nao traz cor de alerta, e a primeira versao do painel
+# resolveu isso com enfase apenas por peso de texto. Na pratica o aviso competia
+# de menos pela atencao -- risco que ficou registrado na epoca e se confirmou.
+# Um bloco que existe para impedir uma leitura errada precisa da coloracao
+# convencional de aviso.
+#
+# As cores de estado ficam separadas das institucionais de proposito: elas
+# comunicam *severidade*, nao identidade de marca. O tipo `info` e a excecao --
+# ali o azul institucional cabe, porque o conteudo e contexto e nao alerta.
+# --------------------------------------------------------------------------- #
 
-    Usa a variante neutra do shadcn de proposito. A paleta institucional nao tem
-    cor de alerta, e `st.warning` traria um amarelo que nao pertence a
-    identidade -- a enfase fica no rotulo e no peso do texto.
+AMBAR_AVISO = "#F0B400"
+FUNDO_AVISO = "#FEF9E7"
+VERDE_OK = "#2E7D32"
+FUNDO_OK = "#EDF7EE"
+
+_ICONES = {
+    "aviso": (
+        '<circle cx="10" cy="10" r="9" fill="{cor}"/>'
+        '<rect x="9" y="4.8" width="2" height="6.4" rx="1" fill="#fff"/>'
+        '<circle cx="10" cy="14.4" r="1.2" fill="#fff"/>'
+    ),
+    "info": (
+        '<circle cx="10" cy="10" r="9" fill="{cor}"/>'
+        '<circle cx="10" cy="5.8" r="1.2" fill="#fff"/>'
+        '<rect x="9" y="8.6" width="2" height="6.6" rx="1" fill="#fff"/>'
+    ),
+    "sucesso": (
+        '<circle cx="10" cy="10" r="9" fill="{cor}"/>'
+        '<path d="M6 10.3l2.6 2.6L14.2 7.3" stroke="#fff" stroke-width="2" '
+        'stroke-linecap="round" stroke-linejoin="round" fill="none"/>'
+    ),
+}
+
+ESTILOS_RESSALVA = {
+    "aviso": (AMBAR_AVISO, FUNDO_AVISO),
+    "info": (viz.AZUL, viz.FUNDO_DESTAQUE),
+    "sucesso": (VERDE_OK, FUNDO_OK),
+}
+
+
+def ressalva(titulo: str, descricao: str, tipo: str = "aviso") -> None:
+    """Cartao de ressalva com a aparencia convencional do seu tipo.
+
+    Args:
+        titulo: frase curta que resume o que precisa ser notado.
+        descricao: o porque, em texto corrido.
+        tipo: `aviso` (ambar) para o que pode induzir leitura errada,
+            `info` (azul institucional) para contexto, `sucesso` (verde) para
+            confirmacao.
     """
-    ui.alert(title=titulo, description=descricao, key=chave)
+    cor, fundo = ESTILOS_RESSALVA[tipo]
+    icone = _ICONES[tipo].format(cor=cor)
+
+    st.markdown(
+        f'<div class="ressalva" style="--ressalva-cor:{cor};'
+        f'--ressalva-fundo:{fundo}">'
+        f'<span class="ressalva__icone">'
+        f'<svg width="19" height="19" viewBox="0 0 20 20">{icone}</svg>'
+        f"</span>"
+        f'<span><span class="ressalva__titulo">{titulo}</span>{descricao}</span>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def abertura(mensagem: str) -> None:
+    """Frase de abertura da pagina: a conclusao antes da evidencia.
+
+    O painel e enviado sem acompanhamento -- quem o abre nao tem quem explique.
+    Cada pagina precisa dizer na primeira linha o que ela conclui, e so entao
+    mostrar como chegou la. Sem isso, o leitor tem que reconstruir a conclusao
+    a partir dos graficos, e a maioria nao vai fazer isso.
+    """
+    st.markdown(f'<div class="abertura">{mensagem}</div>', unsafe_allow_html=True)
 
 
 def titulo_secao(texto: str, apoio: str | None = None) -> None:
-    """Cabecalho de secao com subtitulo opcional."""
+    """Cabecalho de secao.
+
+    O titulo enuncia o *achado*, nao a categoria do grafico. "Ranking por
+    modelo" obriga o leitor a descobrir sozinho o que o ranking diz; "O modelo
+    do veiculo nao separa risco" ja entrega a leitura, e o grafico vira a prova.
+    """
     st.markdown(f"#### {texto}")
     if apoio:
         st.caption(apoio)
@@ -397,10 +530,10 @@ pagina = ui.tabs(options=PAGINAS, value=PAGINAS[0], key="navegacao")
 with st.sidebar:
     if LOGO.is_file():
         st.image(str(LOGO), width=52)
-    st.markdown("**Procedência dos números**")
+    st.markdown("**STELLANTIS**")
     st.caption(
-        "Todos os valores vêm dos mesmos arquivos Parquet que alimentam o "
-        "relatório técnico e o PDF executivo. Este painel não treina nada."
+        "Movidos pela nossa diversidade, desenvolvemos juntos nossas atividades,"
+        " com respeito, ética, construindo e cuidando do futuro."
     )
 
     ui.separator(key="sep-lateral-1")
@@ -453,6 +586,12 @@ with st.sidebar:
 if pagina == "Visão executiva":
     top30 = ganho[ganho["faixa"] == 3].iloc[0]
 
+    abertura(
+        "<strong>Inspecionar os 30% de maior risco encontra metade dos "
+        "recalls.</strong> O modelo ordena a frota por idade, quilometragem "
+        "e reclamações — três dados que a garantia já registra."
+    )
+
     colunas = st.columns(4)
     with colunas[0]:
         ui.metric_card(label="Veículos analisados", value=f"{n_veiculos}",
@@ -477,9 +616,9 @@ if pagina == "Visão executiva":
 
     ui.separator(key="sep-exec-1")
     titulo_secao(
-        "Planejador de capacidade de inspeção",
-        "A restrição real de pós-vendas não é *quais* veículos inspecionar — é "
-        "quantos cabem na capacidade de oficina.",
+        "Quanto a sua capacidade alcança",
+        "A restrição de pós-vendas não é *quais* veículos inspecionar — é quantos "
+        "cabem na oficina. Ajuste e veja o resultado.",
     )
 
     esquerda, direita = st.columns([1, 2.2])
@@ -563,7 +702,11 @@ if pagina == "Visão executiva":
         grafico(fig, altura=420, chave="g-ganho")
 
     ui.separator(key="sep-exec-2")
-    titulo_secao("Onde o risco se concentra")
+    titulo_secao(
+        "O risco se concentra em veículos maduros e rodados",
+        "Veículos com 6+ anos e mais de 125 mil km: 84% de recall. Novos com até "
+        "25 mil km: 6%.",
+    )
 
     esquerda, direita = st.columns([3, 2])
 
@@ -617,8 +760,8 @@ if pagina == "Visão executiva":
         )
         grafico(fig, altura=330, chave="g-segmentos")
         nota(
-            f"Células com menos de {MINIMO_AMOSTRA} veículos aparecem como "
-            "**n/d** — a taxa existe, mas não é estimativa confiável."
+            f"**n/d** = menos de {MINIMO_AMOSTRA} veículos no segmento. A taxa "
+            "existe, mas não sustenta decisão."
         )
 
     with direita:
@@ -654,12 +797,11 @@ if pagina == "Visão executiva":
         grafico(fig, altura=330, chave="g-ranking")
 
         ressalva(
-            "⚠ Este ranking não é estatisticamente sustentável",
-            "O intervalo do primeiro colocado contém integralmente o do último, "
-            "e o teste de independência não rejeita a hipótese de que o modelo "
-            "do veículo é irrelevante (χ²(8) = 6,69; p = 0,570). Passe o cursor "
-            "sobre as barras para comparar os intervalos.",
-            "ressalva-ranking",
+            "Não priorize por modelo de veículo",
+            "As barras de erro se sobrepõem: o intervalo do primeiro colocado "
+            "cobre o do último. O teste estatístico não encontra associação "
+            "(p = 0,570). Esta ordem é ruído, não risco.",
+            "aviso",
         )
 
 # --------------------------------------------------------------------------- #
@@ -667,6 +809,12 @@ if pagina == "Visão executiva":
 # --------------------------------------------------------------------------- #
 
 elif pagina == "Perfil da frota":
+    abertura(
+        "<strong>O risco não está no modelo do veículo. Está no tempo de uso "
+        "e nas reclamações.</strong> Filtre abaixo para examinar qualquer "
+        "recorte da frota."
+    )
+
     with st.expander("Filtros", expanded=True):
         colunas = st.columns(3)
         modelos = colunas[0].multiselect(
@@ -693,10 +841,9 @@ elif pagina == "Perfil da frota":
 
     if recorte.empty:
         ressalva(
-            "Nenhum veículo no recorte",
-            "A combinação de filtros selecionada não retorna registros. "
-            "Remova ao menos um critério.",
-            "ressalva-vazio",
+            "Nenhum veículo neste recorte",
+            "Remova ao menos um filtro.",
+            "aviso",
         )
         st.stop()
 
@@ -726,18 +873,18 @@ elif pagina == "Perfil da frota":
 
     if n_recorte < MINIMO_AMOSTRA:
         ressalva(
-            "⚠ Amostra insuficiente para decisão",
-            f"O recorte tem apenas {n_recorte} veículos, e o intervalo de "
-            f"confiança da taxa tem {pct(ic_sup[0] - ic_inf[0])} de amplitude — "
-            "largo demais para sustentar priorização.",
-            "ressalva-amostra",
+            "Amostra pequena demais para decidir",
+            f"São {n_recorte} veículos, e a taxa varia em "
+            f"{pct(ic_sup[0] - ic_inf[0])} para mais ou para menos. Largo demais "
+            "para priorizar.",
+            "aviso",
         )
 
     ui.separator(key="sep-perfil-1")
     esquerda, direita = st.columns(2)
 
     with esquerda:
-        titulo_secao("Evolução ao longo da vida do veículo")
+        titulo_secao("O risco sobe de 5% para 85% ao longo da vida")
         evolucao = dados["evolucao"]
         ic_inf_e, ic_sup_e = eda.intervalo_wilson(
             evolucao["n_recalls"], evolucao["n_veiculos"]
@@ -779,12 +926,12 @@ elif pagina == "Perfil da frota":
         )
         grafico(fig, altura=390, chave="g-evolucao")
         nota(
-            "`idade_veiculo` é a única dimensão temporal do dataset. Leitura de "
-            "coorte — perfil da frota por idade — e não série temporal."
+            "Leitura de coorte: a frota hoje, por idade. Não é tendência ao "
+            "longo do tempo — a base não tem datas."
         )
 
     with direita:
-        titulo_secao("Reclamações acumuladas e risco")
+        titulo_secao("A partir da terceira reclamação, o risco dobra")
         por_reclamacoes = (
             features.assign(alvo=features[config.COLUNA_ALVO].astype(int))
             .groupby("reclamacoes", as_index=False)
@@ -826,8 +973,7 @@ elif pagina == "Perfil da frota":
         )
         grafico(fig, altura=390, chave="g-reclamacoes")
         nota(
-            "Apenas níveis com 10 ou mais veículos são exibidos — abaixo disso a "
-            "taxa é ruído."
+            "Exibidos apenas os níveis com 10 ou mais veículos."
         )
 
     ui.separator(key="sep-perfil-2")
@@ -852,10 +998,16 @@ elif pagina == "Perfil da frota":
 # --------------------------------------------------------------------------- #
 
 elif pagina == "Qualidade dos dados":
+    abertura(
+        "<strong>Os dados passam em todos os testes do contrato.</strong> "
+        "500 registros, nenhum valor ausente, uma duplicata removida. Abaixo, a "
+        "evidência e o porquê de cada decisão de limpeza."
+    )
+
     titulo_secao(
-        "Contrato de dados",
-        "A avaliação de qualidade não é inspeção manual: é um contrato declarado "
-        "em `pandera` que passa ou falha, persistido como artefato auditável.",
+        "O contrato passou",
+        "Qualidade aqui não é inspeção manual: é um contrato declarado em "
+        "`pandera`, que passa ou falha e deixa registro auditável.",
     )
 
     esquerda, direita = st.columns([2, 3])
@@ -895,8 +1047,8 @@ elif pagina == "Qualidade dos dados":
 
     ui.separator(key="sep-qualidade")
     titulo_secao(
-        "Distribuição das variáveis, por desfecho",
-        "Clique nos itens da legenda para isolar um dos desfechos.",
+        "Veículos com recall se concentram à direita nas três variáveis",
+        "Clique na legenda para isolar um dos desfechos.",
     )
 
     rotulado = features.assign(
@@ -948,10 +1100,16 @@ elif pagina == "Qualidade dos dados":
 # --------------------------------------------------------------------------- #
 
 elif pagina == "Desempenho do modelo":
+    abertura(
+        "<strong>Dados dois veículos, o modelo acerta qual tem mais risco em 79% "
+        "das vezes.</strong> Suficiente para priorizar a fila de inspeção, "
+        "insuficiente para excluir veículos. Esta página mostra onde ele falha."
+    )
+
     titulo_secao(
-        "Simulador de custo — onde colocar o ponto de corte",
-        "O limiar de 0,5 não é neutro: ele é o ótimo apenas quando os dois erros "
-        "custam o mesmo.",
+        "Onde colocar o ponto de corte",
+        "O limiar de 0,5 só é ótimo quando os dois erros custam o mesmo — e aqui "
+        "não custam. Ajuste a razão e veja a decisão mudar.",
     )
 
     esquerda, direita = st.columns([1, 2.4])
@@ -976,19 +1134,19 @@ elif pagina == "Desempenho do modelo":
 
         if razao == config.RAZAO_CUSTO_ANCORA:
             ressalva(
-                f"✓ Âncora adotada na entrega ({razao:.0f}:1)",
-                "É o último ponto antes da degeneração: a Precision permanece "
-                "acima da taxa base e o Recall segue executável.",
-                "sim-ancora",
+                f"Este é o ponto adotado na entrega ({razao:.0f}:1)",
+                "É o último corte antes de o modelo passar a sinalizar quase "
+                "toda a frota.",
+                "sucesso",
             )
         elif resultado["taxa_sinalizacao"] > 0.85:
             ressalva(
-                "⚠ A recomendação deixou de selecionar",
-                f"Com {br(razao, 1)}:1 o modelo sinaliza "
-                f"{pct(resultado['taxa_sinalizacao'])} da frota e a Precision cai "
-                f"para {br(resultado['precision'], 3)}, contra uma taxa base de "
-                f"{br(taxa_base, 3)}. Inspecionar quase tudo não é priorizar.",
-                "sim-degenerado",
+                "Aqui o modelo deixa de selecionar",
+                f"Sinaliza {pct(resultado['taxa_sinalizacao'])} da frota com "
+                f"precisão de {br(resultado['precision'], 2)} — contra "
+                f"{br(taxa_base, 2)} de quem sorteia ao acaso. Inspecionar quase "
+                "tudo não é priorizar.",
+                "aviso",
             )
 
     with direita:
@@ -1061,8 +1219,9 @@ elif pagina == "Desempenho do modelo":
 
     ui.separator(key="sep-desempenho-1")
     titulo_secao(
-        "Comparação das 12 combinações",
-        "Passe o cursor para ler todas as métricas de cada combinação.",
+        "Nenhuma combinação é melhor que as outras",
+        "Doze combinações de modelo e atributos, todas com intervalos que se "
+        "sobrepõem. Passe o cursor para ler as métricas de cada uma.",
     )
 
     esquerda, direita = st.columns([3, 2])
@@ -1141,13 +1300,12 @@ elif pagina == "Desempenho do modelo":
             key="tabela-testes",
         )
         ressalva(
-            "As 25 dobras não são independentes",
-            "Elas compartilham dados de treino. Com a correção de "
-            "Nadeau-Bengio, o p ingênuo declarava 7 de 11 comparações "
-            "significantes; o corrigido, apenas 2. Todas as combinações "
-            "razoáveis são indistinguíveis entre si, e a escolha se justifica "
-            "por parcimônia, não por superioridade.",
-            "ressalva-nadeau",
+            "Por que nenhuma diferença conta como real",
+            "As 25 dobras compartilham dados de treino, então o teste comum "
+            "exagera a significância. Corrigida essa dependência, 9 das 11 "
+            "comparações deixam de ser significativas. Entre equivalentes, "
+            "escolhemos o modelo mais simples.",
+            "info",
         )
 
     ui.separator(key="sep-desempenho-2")
@@ -1155,8 +1313,9 @@ elif pagina == "Desempenho do modelo":
 
     with esquerda:
         titulo_secao(
-            "Curvas de desempenho",
-            "O hover mostra **o limiar** de cada ponto de operação.",
+            "O preço de capturar mais recalls",
+            "Para chegar a 90% de captura, a precisão cai para cerca de 60%. "
+            "O cursor mostra o limiar de cada ponto.",
         )
         roc, pr = dados["roc"], dados["pr"]
         fig = make_subplots(
@@ -1204,7 +1363,7 @@ elif pagina == "Desempenho do modelo":
         grafico(fig, altura=560, chave="g-curvas")
 
     with direita:
-        titulo_secao("Calibração")
+        titulo_secao("A probabilidade acerta nos extremos, erra no meio")
         calib = dados["calibracao"]
         pior = calib.loc[calib["desvio"].abs().idxmax()]
 
@@ -1246,14 +1405,13 @@ elif pagina == "Desempenho do modelo":
         grafico(fig, altura=560, chave="g-calibracao")
 
         ressalva(
-            "⚠ Calibração é o ponto fraco declarado",
-            f"Erro absoluto médio de "
-            f"{br(decisao['erro_absoluto_medio_calibracao'], 3)}. A faixa "
-            f"destacada prevê {pct(pior['probabilidade_media'])} e observa "
-            f"{pct(pior['frequencia_observada'])}. A otimização do limiar por "
-            "custo pressupõe probabilidades honestas — no meio da escala elas "
-            "não são.",
-            "ressalva-calibracao",
+            "Este é o ponto fraco do modelo",
+            f"Na faixa destacada, ele prevê "
+            f"{pct(pior['probabilidade_media'])} de risco e observa "
+            f"{pct(pior['frequencia_observada'])}. O erro médio é de "
+            f"{br(decisao['erro_absoluto_medio_calibracao'] * 100, 1)} pontos. "
+            "O ponto de corte por custo supõe probabilidade honesta.",
+            "aviso",
         )
 
 # --------------------------------------------------------------------------- #
@@ -1261,10 +1419,16 @@ elif pagina == "Desempenho do modelo":
 # --------------------------------------------------------------------------- #
 
 elif pagina == "Interpretação":
+    abertura(
+        "<strong>Cada reclamação registrada aumenta em 27% a chance de "
+        "recall.</strong> Tempo de uso e quilometragem, lidos em conjunto, "
+        "pesam quase o dobro disso."
+    )
+
     titulo_secao(
-        "Score de um veículo",
-        "Para um modelo linear a decomposição da predição tem forma fechada — é "
-        "a mesma quantidade que o SHAP calcula, sem custo de amostragem.",
+        "Simule um veículo",
+        "Informe as três características e veja o risco, a decisão e quanto cada "
+        "fator contribuiu.",
     )
 
     # Os limites vêm do observado, e não do domínio de negócio. Um controle que
@@ -1288,9 +1452,9 @@ elif pagina == "Interpretação":
         # inteira trocaria também as vírgulas do texto por pontos.
         km_formatado = f"{km_max:,}".replace(",", ".")
         nota(
-            f"Faixas limitadas ao observado na base (idade ≤ {idade_max} anos, "
-            f"km ≤ {km_formatado}, reclamações ≤ {recl_max}). "
-            "Fora dela o modelo extrapolaria."
+            f"Limites do que a base contém: até {idade_max} anos, "
+            f"{km_formatado} km e {recl_max} reclamações. Fora disso o modelo "
+            "estaria adivinhando."
         )
 
     veiculo = pd.DataFrame(
@@ -1353,16 +1517,20 @@ elif pagina == "Interpretação":
         grafico(fig, altura=320, chave="g-contribuicoes")
 
         nota(
-            f"Ponto de partida (veículo médio da frota): {br(referencia)} em "
-            "log-odds. Barras à direita empurram o veículo para o risco; à "
-            "esquerda, para longe dele."
+            "Barras à direita empurram o veículo para o risco; à esquerda, "
+            f"para longe dele. O ponto de partida — um veículo médio — é "
+            f"{br(referencia)}."
         )
 
     ui.separator(key="sep-interp-1")
     esquerda, direita = st.columns([3, 2])
 
     with esquerda:
-        titulo_secao("Importância das variáveis")
+        titulo_secao(
+            "Medir uma variável por vez leva à conclusão errada",
+            "À esquerda, o método padrão. À direita, o correto para variáveis "
+            "que carregam a mesma informação.",
+        )
         fig = make_subplots(
             rows=1, cols=2, horizontal_spacing=0.22,
             subplot_titles=("Uma variável por vez", "Colineares em bloco"),
@@ -1409,9 +1577,9 @@ elif pagina == "Interpretação":
         fig.update_yaxes(showgrid=False)
         grafico(fig, altura=340, chave="g-importancia")
         nota(
-            "Com `corr(idade, km) = 0,947`, permutar uma variável de cada vez "
-            "**subestima as duas** — a outra cobre a ausência. A leitura "
-            "individual, saída padrão de qualquer biblioteca, está errada aqui."
+            "Ao remover só a idade, a quilometragem cobre a ausência — e "
+            "vice-versa. Cada uma parece pouco importante. Juntas, valem 1,73× "
+            "a soma das partes."
         )
 
     with direita:
@@ -1428,17 +1596,17 @@ elif pagina == "Interpretação":
             key="tabela-coeficientes",
         )
         ressalva(
-            "Não ler idade e km isoladamente",
-            "Sob colinearidade de 0,947 a repartição do efeito entre as duas "
-            "depende da amostra, não do fenômeno. A leitura confiável é a do "
-            "bloco tempo_e_uso.",
-            "ressalva-coeficientes",
+            "Não leia idade e quilometragem separadamente",
+            "As duas correlacionam 0,947 — medem quase a mesma coisa. Como o "
+            "efeito se divide entre elas muda conforme a amostra. Leia o bloco "
+            "tempo e uso.",
+            "aviso",
         )
 
     ui.separator(key="sep-interp-2")
     titulo_secao(
-        "Risco previsto em função de cada variável",
-        "A linha tracejada marca o limiar de decisão vigente.",
+        "A partir de que ponto um veículo entra na fila",
+        "Onde a curva cruza a linha tracejada, o veículo passa a ser sinalizado.",
     )
 
     dependencia = dados["dependencia"]
@@ -1476,9 +1644,8 @@ elif pagina == "Interpretação":
     fig.update_yaxes(title_text="risco previsto", row=1, col=1)
     grafico(fig, altura=340, chave="g-dependencia")
     nota(
-        "A dependência parcial avalia combinações que quase não ocorrem na "
-        "frota — um veículo de 8 anos com 10 mil km, por exemplo. A leitura vale "
-        "na região densa dos dados, não nas pontas."
+        "As pontas das curvas descrevem combinações raras na frota — um "
+        "veículo de 8 anos com 10 mil km, por exemplo. Leia o miolo."
     )
 
 # --------------------------------------------------------------------------- #
@@ -1487,6 +1654,6 @@ elif pagina == "Interpretação":
 
 ui.separator(key="sep-rodape")
 st.caption(
-    "Desafio técnico · Bolsista Cientista de Dados · dados sintéticos fornecidos "
-    "no enunciado. Nenhum número descreve a frota real da Stellantis."
+    "Feito com dados sintéticos. "
+    "Nenhum número descreve a frota real da Stellantis."
 )

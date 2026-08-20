@@ -1,7 +1,7 @@
 ---
 title: "Predição de Recall a partir de Ocorrências de Garantia"
 subtitle: "Análise exploratória, modelo preditivo, avaliação e interpretação"
-author: "Desafio técnico · Bolsista Cientista de Dados"
+author: "Danilo Santos Monteiro"
 date: today
 date-format: "DD/MM/YYYY"
 abstract: |

@@ -18,13 +18,17 @@ sobre branco -- reprovado em qualquer criterio de legibilidade. Rotulos de eixo
 usam um tint de 70% do grafite institucional, que sobe o contraste para ~5,3:1
 sem sair da matiz.
 
-**Cor de alerta.** A paleta nao tem vermelho, ambar ou qualquer cor quente. Em
-vez de introduzir uma, a enfase de risco e feita por **valor**: quanto mais
-escuro, maior o risco (#BCBCBC -> #243882 -> #00133B). Linhas de referencia
-(acaso, taxa base) usam grafite tracejado em vez de vermelho. O custo dessa
-decisao e real e vale registrar: um alerta em escala monocromatica compete menos
-pela atencao do que um alerta colorido, entao a sinalizacao de problema se apoia
-mais em anotacao textual e peso de traco.
+**Cor de alerta.** A paleta nao tem vermelho, ambar ou qualquer cor quente. Nos
+**graficos** a enfase de risco e feita por **valor**: quanto mais escuro, maior o
+risco (#BCBCBC -> #243882 -> #00133B). Linhas de referencia (acaso, taxa base)
+usam grafite tracejado em vez de vermelho. Isso funciona bem para dado continuo,
+onde a intensidade ja carrega a leitura.
+
+Para **cartoes de aviso** a mesma solucao nao funcionou: um alerta monocromatico
+compete de menos pela atencao, e um bloco que existe para impedir leitura errada
+precisa da coloracao convencional do seu tipo. O painel interativo usa cores de
+estado proprias (ambar, verde) nesses cartoes, mantidas separadas das
+institucionais -- elas comunicam *severidade*, nao identidade de marca.
 """
 
 from __future__ import annotations

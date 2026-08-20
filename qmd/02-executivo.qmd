@@ -1,7 +1,7 @@
 ---
 title: "Risco de Recall: Onde Inspecionar Primeiro"
 subtitle: "Sumário executivo · Diretoria de Qualidade e Pós-Vendas"
-author: "Desafio técnico · Bolsista Cientista de Dados"
+author: "Danilo Santos Monteiro"
 date: today
 date-format: "DD/MM/YYYY"
 format:
@@ -82,28 +82,34 @@ fig.tight_layout(pad=0.4)
 plt.show()
 ```
 
-## A recomendação
+## Inspecione por risco, e encontre o dobro com a mesma oficina
 
-**Priorize inspeções pelo perfil de uso do veículo, não pelo modelo.** Um modelo
-estatístico treinado sobre `{python} n_veiculos` registros de garantia ordena a
-frota por risco de recall usando três informações já disponíveis: **idade**,
-**quilometragem** e **número de reclamações registradas**.
+Um modelo treinado sobre `{python} n_veiculos` registros de garantia ordena a
+frota por risco de recall usando três dados que a garantia **já registra**:
+idade, quilometragem e número de reclamações. Inspecionando nessa ordem:
 
-Inspecionando os veículos em ordem decrescente de risco:
+```{python}
+#| label: capacidade
+#| output: asis
 
-- **30% da frota → `{python} f"{top30['pct_recalls_capturados']:.0%}"` dos recalls.**
-  Com a mesma capacidade de oficina, encontram-se
-  `{python} br(top30['lift'])` vezes mais problemas do que sorteando
-  veículos.
-- **50% da frota → `{python} f"{top50['pct_recalls_capturados']:.0%}"` dos recalls.**
-- Ampliando a cobertura ao máximo recomendado, o modelo antecipa
-  **`{python} f"{recall_op:.0%}"`** dos recalls.
+destaques = ganho[ganho["faixa"].isin([1, 3, 5])]
+print(pd.DataFrame(
+    {
+        "Se inspecionar": [f"{p:.0%} da frota" for p in destaques["pct_frota"]],
+        "Encontra": [
+            f"{c:.0%} dos recalls" for c in destaques["pct_recalls_capturados"]
+        ],
+        "Ganho sobre inspeção aleatória": [
+            f"{br(v)}×" for v in destaques["lift"]
+        ],
+    }
+).to_markdown(index=False))
+```
 
-**O modelo do veículo não deve orientar a priorização.** A diferença de taxa de
-recall entre Toro (57%) e Fastback (37%) parece grande, mas está inteiramente
-dentro da margem de erro amostral — os testes estatísticos não encontram
-associação entre modelo e risco. Um ranking por modelo direcionaria inspeções
-por ruído.
+**O modelo do veículo não deve orientar a priorização.** A diferença entre Toro
+(57% de recall) e Fastback (37%) parece grande, mas cabe inteira na margem de
+erro: os testes não encontram associação entre modelo e risco. Priorizar por
+esse ranking seria priorizar por ruído.
 
 ```{python}
 #| label: fig-ganho
@@ -148,7 +154,7 @@ plt.show()
 
 {{< pagebreak >}}
 
-## O que aumenta o risco
+## Reclamação registrada é o sinal mais forte — e o mais precoce
 
 Mantidas as demais condições constantes, cada fator multiplica a chance de
 recall por:
@@ -172,13 +178,12 @@ print(pd.DataFrame(
 ).to_markdown(index=False))
 ```
 
-A leitura prática: **reclamação registrada é o sinal mais forte e mais precoce**.
-Um veículo com 3 ou mais reclamações tem risco de recall acima de 58%, contra
-28% para veículos com 2 — um salto abrupto que torna esse número um gatilho
-operacional direto, sem necessidade de cálculo.
+**Três reclamações são o gatilho operacional.** O risco salta de 28% para 58%
+entre a segunda e a terceira ocorrência — um degrau, não uma rampa. É um corte
+que a oficina aplica sem precisar do modelo.
 
 Idade e quilometragem atuam juntas e não devem ser lidas em separado: na prática
-elas medem a mesma coisa — o desgaste acumulado.
+medem a mesma coisa, o desgaste acumulado.
 
 ```{python}
 #| label: fig-segmentos
@@ -226,9 +231,10 @@ fig.tight_layout()
 plt.show()
 ```
 
-## O que a recomendação custa
+## O que essa decisão custa
 
-Aplicada à base analisada, a priorização recomendada produz:
+Para capturar quase todos os recalls, o ponto de corte recomendado sinaliza
+`{python} f"{decisao['taxa_sinalizacao']:.0%}"` da frota. Aplicado à base:
 
 ```{python}
 #| label: custo
@@ -262,14 +268,17 @@ print(pd.DataFrame(
 ```
 
 Esse equilíbrio decorre de uma premissa explícita: **um recall não antecipado
-custa três vezes mais que uma inspeção desnecessária**. A premissa é editável.
-Adotar uma razão mais conservadora aumenta a cobertura, mas com retorno
-decrescente rápido — a partir de 5:1 a recomendação converge para "inspecionar
-quase toda a frota", o que deixa de ser priorização.
+custa três vezes mais que uma inspeção desnecessária.** A premissa é editável, e
+o painel interativo permite testar outras razões.
+
+Uma ressalva importa: a partir de 5:1 a recomendação converge para "inspecionar
+quase toda a frota" — cobertura maior, mas seleção nenhuma. É por isso que a
+**priorização por ordem de risco** é o uso recomendado, e não a classificação em
+sinalizar/não sinalizar.
 
 {{< pagebreak >}}
 
-## O que este modelo não faz
+## Quatro limites que precisam estar claros
 
 **Não substitui a análise de engenharia.** Ele ordena risco a partir de sintomas
 (idade, uso, reclamações), não de causas. Não identifica qual componente falha
@@ -294,7 +303,7 @@ Nenhum número deste documento descreve a frota real da Stellantis; o que se
 demonstra é o método.
 :::
 
-## Próximos passos
+## O que fazer a seguir
 
 ```{python}
 #| label: passos
@@ -319,14 +328,22 @@ print(pd.DataFrame(
 ).to_markdown(index=False))
 ```
 
-As duas ações de integração de dados valem mais do que qualquer refinamento
-adicional do modelo. Com as quatro variáveis disponíveis hoje, o ganho de
-`{python} br(top30['lift'])`× sobre a inspeção aleatória está próximo do
-teto. **O caminho para melhorar não passa por um algoritmo melhor, e sim por
-dados que expliquem a origem da falha.**
+As duas ações de integração de dados valem mais do que qualquer refinamento do
+modelo. Com as quatro variáveis de hoje, o ganho de
+`{python} br(top30['lift'])`× sobre a inspeção aleatória está próximo do teto.
+**O caminho para melhorar não passa por um algoritmo melhor, e sim por dados que
+expliquem a origem da falha.**
 
 ---
 
-*Detalhamento metodológico completo — validação, comparação de modelos,
-interpretação e limitações — no relatório técnico e no painel interativo que
-acompanham esta entrega.*
+### Para explorar
+
+**Painel interativo** — simule outras capacidades de inspeção, outras razões de
+custo e o risco de um veículo específico.
+
+<https://app-stellantis-challenge.streamlit.app/>
+
+**Código e documentação** — pipeline de dados, validação, comparação de modelos
+e o relatório técnico completo.
+
+<https://github.com/danzz32/Stellantis-Challenge>
